@@ -29,8 +29,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 ## 当前接续点
 
-- 下一批：修正中英文 README 的主机工具清单并提供统一 Windows 测试入口；随后继续 H4 的 timeout/pending consumption、history 提交和 reset/new generation 隔离。
-- 当前最新记录：[M0 public-v1 脱敏边界加固](validation/host/2026-09-20-m0-redaction-hardening.md)。
+- 下一批：继续 H4；增加 timeout/pending consumption、显式 `result_consumed` 后的 history 提交，以及 reset/new generation 的资源隔离，不扩到网络 daemon 或设备执行。
+- 当前最新记录：[统一 Windows 测试入口与 README 同步](validation/host/2026-09-20-host-test-entry-readme-sync.md)。
 - 设备、SDK、模型、首个游戏：当前均不要求提供。不要重复请求连接掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 

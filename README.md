@@ -4,7 +4,7 @@
 
 本项目探索在骁龙 Linux 掌机上，让 **Qualcomm Hexagon NPU 执行 FSR4 神经网络推理**，并由 GPU 完成特征准备、时序处理、重建与回写。首个研究目标是 **AYN Odin 3 / Snapdragon 8 Elite / Armada OS**，计划从游戏的 DLSS Super Resolution 接口接入，后续再评估 Steam 与可选 Decky 管理界面。
 
-> **当前阶段：仅有 M0 主机工具与设计文档，没有超分运行时。**
+> **当前阶段：仅有 M0 主机工具、合成 CPU 参考/回放工具与设计文档，没有超分运行时。**
 > 尚未连接或测试 Odin 3；当前证据仅来自 Windows、匿名 fixture、离线检查和 CPU 主机测试。仓库没有可安装插件、已验证游戏、HTP/QNN NPU 执行结果或性能数据，不能声称 FSR4 已在 Hexagon NPU 上可用。
 
 ## 已有内容
@@ -12,7 +12,9 @@
 - `draft-0` 设备档案 schema。
 - Linux 普通用户只读采集器 `tools/device/collect.py`；它不安装软件、提权、改固件、解锁硬件或打开 DSP 会话。
 - 离线档案校验与公开脱敏工具 `tools/device/profile_tools.py`。
-- 匿名 fixture 与 Windows 可运行的 Python 回归测试。
+- `tools/model/` 中仅面向合成数据的 manifest 校验、affine int8 和整数网格空间参考。
+- `tools/replay/` 中尚未完成的同帧身份/单在途 CPU 生命周期回放。
+- 匿名 fixture 与 Windows 可运行的 device/model/replay Python 回归测试。
 
 这些工具用于建立设备事实和验证文件处理边界，不包含 FSR4 模型执行、GPU/NPU 图形链路、游戏接入、启动器或 Decky 插件。NPU 也只会承担完整超分算法的一部分。
 
@@ -22,10 +24,10 @@
 
 ```powershell
 python -m pip install -r tools/device/requirements-host.txt
-python -m unittest discover -s tests/device -v
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-该检查无需设备，只验证 Python 工具和 fixture 行为；它不是 Odin 3、CDSP/FastRPC、HTP、FSR4 或游戏验证。实时设备采集仅支持 Linux，使用方法见 [`tools/device/README.md`](tools/device/README.md)。
+该统一入口无需设备，只验证 Python 工具、合成 CPU 参考和 fixture 行为；它不是 Odin 3、CDSP/FastRPC、HTP、完整 FSR4 或游戏验证。实时设备采集仅支持 Linux，使用方法见 [`tools/device/README.md`](tools/device/README.md)。
 
 ## 开发入口
 
