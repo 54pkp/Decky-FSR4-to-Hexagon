@@ -1,0 +1,1 @@
+user=fixture-user-sentinel host=fixture-host-sentinel home=/home/fixture-user-sentinel/PrivateNotes serial=SERIAL-FIXTURE-998877

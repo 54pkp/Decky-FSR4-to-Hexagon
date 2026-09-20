@@ -1,0 +1,34 @@
+[
+  {
+    "argv": ["getconf", "GNU_LIBC_VERSION"],
+    "available": true,
+    "exit_code": 0,
+    "stdout_file": "command-output/empty.stdout",
+    "stderr_file": null,
+    "delay_ms": 0
+  },
+  {
+    "argv": ["vulkaninfo", "--summary"],
+    "available": true,
+    "exit_code": null,
+    "stdout_file": null,
+    "stderr_file": "command-output/timeout.stderr",
+    "delay_ms": 60000
+  },
+  {
+    "argv": ["eglinfo"],
+    "available": true,
+    "exit_code": 7,
+    "stdout_file": null,
+    "stderr_file": "command-output/nonzero.stderr",
+    "delay_ms": 0
+  },
+  {
+    "argv": ["bootc", "status"],
+    "available": false,
+    "exit_code": null,
+    "stdout_file": null,
+    "stderr_file": null,
+    "delay_ms": 0
+  }
+]

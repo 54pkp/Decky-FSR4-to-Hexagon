@@ -1,0 +1,56 @@
+{
+  "schema_version": "draft-0",
+  "example_only": true,
+  "profile_kind": "private",
+  "device_profile_id": "example-comprehensive-offline",
+  "supersedes": null,
+  "evidence_level": "host_test",
+  "gate": "not_run",
+  "collection": {
+    "method": "fixture",
+    "started_at": "2026-09-20T01:00:00Z",
+    "finished_at": "2026-09-20T01:00:01Z",
+    "tool": {"name": "tools/device/collect.py", "commit": "0000000000000000000000000000000000000000", "dirty_tree": false}
+  },
+  "identity": {
+    "host_name": {"value": "example-host", "source": {"kind": "fixture", "locator": "metadata/host", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "user_name": {"value": "example-user", "source": {"kind": "fixture", "locator": "metadata/user", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null}
+  },
+  "hardware": {
+    "market_name": {"value": "Example handheld", "source": {"kind": "user_input", "locator": "fixture argument", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "device_tree_model": {"value": null, "source": {"kind": "file", "locator": "/proc/device-tree/model", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "missing", "failure": {"category": "missing", "message": "fixture file absent", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "device_tree_compatible": {"value": null, "source": {"kind": "file", "locator": "/proc/device-tree/compatible", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "permission_denied", "failure": {"category": "permission_denied", "message": "fixture denied read", "exit_code": null, "stderr": "permission denied", "stderr_truncated": false}},
+    "soc_id": {"value": "example-soc", "source": {"kind": "fixture", "locator": "root/sys/devices/soc0/soc_id", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "soc_family": {"value": "example-family", "source": {"kind": "fixture", "locator": "root/sys/devices/soc0/family", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "soc_machine": {"value": "example-machine", "source": {"kind": "fixture", "locator": "root/sys/devices/soc0/machine", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "soc_revision": {"value": null, "source": {"kind": "fixture", "locator": "root/sys/devices/soc0/revision", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "missing", "failure": {"category": "missing", "message": "empty fixture file", "exit_code": null, "stderr": null, "stderr_truncated": false}}
+  },
+  "os": {
+    "distribution": {"value": "Example Linux", "source": {"kind": "file", "locator": "/etc/os-release", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "image": {"value": null, "source": {"kind": "file", "locator": "/etc/image-id", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "missing", "failure": {"category": "missing", "message": "fixture image metadata absent", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "kernel": {"value": "6.0.0-example", "source": {"kind": "command", "locator": "uname -a", "evidence_ids": ["ev-truncated"]}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "libc": {"value": null, "source": {"kind": "command", "locator": "getconf GNU_LIBC_VERSION", "evidence_ids": ["ev-empty"]}, "observed_at": "2026-09-20T01:00:00Z", "status": "command_failed", "failure": {"category": "command_failed", "message": "empty stdout", "exit_code": 0, "stderr": null, "stderr_truncated": false}}
+  },
+  "graphics": {
+    "vulkan": {"value": null, "source": {"kind": "command", "locator": "vulkaninfo --summary", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "timeout", "failure": {"category": "timeout", "message": "fixture timeout", "exit_code": null, "stderr": "fixture command exceeded its timeout", "stderr_truncated": false}},
+    "egl": {"value": null, "source": {"kind": "command", "locator": "eglinfo", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "command_failed", "failure": {"category": "command_failed", "message": "fixture nonzero exit", "exit_code": 7, "stderr": "fixture command exited nonzero", "stderr_truncated": true}}
+  },
+  "npu": {
+    "remoteproc_inventory": {"value": [], "source": {"kind": "fixture", "locator": "root/sys/class/remoteproc", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "cdsp_candidates": {"value": [], "source": {"kind": "fixture", "locator": "derived from remoteproc inventory", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null},
+    "fastrpc_nodes": {"value": null, "source": {"kind": "file", "locator": "/dev", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "permission_denied", "failure": {"category": "permission_denied", "message": "fixture directory inaccessible", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "dma_heap_nodes": {"value": [], "source": {"kind": "fixture", "locator": "root/dev/dma_heap", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "success", "failure": null}
+  },
+  "runtime_stack": {
+    "bootc": {"value": null, "source": {"kind": "command", "locator": "bootc status", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "unavailable", "failure": {"category": "unavailable", "message": "fixture command missing", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "steam": {"value": null, "source": {"kind": "user_input", "locator": "--steam-path", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "unavailable", "failure": {"category": "unavailable", "message": "no Steam path supplied", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "proton": {"value": null, "source": {"kind": "user_input", "locator": "--proton-path", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "unavailable", "failure": {"category": "unavailable", "message": "no Proton path supplied", "exit_code": null, "stderr": null, "stderr_truncated": false}},
+    "guest_executable": {"value": null, "source": {"kind": "user_input", "locator": "--guest-exe", "evidence_ids": []}, "observed_at": "2026-09-20T01:00:00Z", "status": "unavailable", "failure": {"category": "unavailable", "message": "no guest executable supplied", "exit_code": null, "stderr": null, "stderr_truncated": false}}
+  },
+  "game_candidates": [],
+  "evidence": [
+    {"evidence_id": "ev-empty", "collection_item_id": "libc", "path": "evidence/empty.txt", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "byte_count": 0, "truncated": false, "visibility": "private"},
+    {"evidence_id": "ev-truncated", "collection_item_id": "kernel", "path": "evidence/path with spaces.txt", "sha256": "0ec8df748cbc1a16c07738aa280a995f0da1123faac3f8f7660b0d5177223566", "byte_count": 23, "truncated": true, "visibility": "private"}
+  ],
+  "redaction": null
+}
