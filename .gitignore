@@ -94,3 +94,7 @@ CMakeUserPresets.json
 *.log
 
 # Dependency lockfiles, CMakePresets.json, source and documentation stay tracked.
+
+# Local upstream checkouts and temporary research notes
+/research/
+/.research-notes/
