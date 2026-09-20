@@ -1,0 +1,96 @@
+# Operating system and local editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment and credentials; keep safe examples trackable
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+
+# JavaScript / TypeScript frontend dependencies and generated output
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+.turbo/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python backend environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Native / CMake / cross-compilation output
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+CMakeUserPresets.json
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.elf
+*.pdb
+
+# Local SDKs, toolchains and externally provisioned assets
+# Place assets in these folders; do not hide all model/binary file extensions.
+/sdk/
+/sdks/
+/toolchains/
+/firmware/
+/models/
+/weights/
+/downloads/
+/local/
+
+# Local game installations and FEX / Proton / Wine runtime state
+/games/
+/prefixes/
+/wineprefix/
+/compatdata/
+/steamapps/
+/rootfs/
+/.fex-emu/
+
+# Generated packages, diagnostics and raw device-test output
+/artifacts/
+/logs/
+/captures/
+/benchmark-results/
+/tmp/
+*.log
+
+# Dependency lockfiles, CMakePresets.json, source and documentation stay tracked.
