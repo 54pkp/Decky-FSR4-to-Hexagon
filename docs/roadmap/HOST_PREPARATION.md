@@ -20,10 +20,12 @@ H 队列 complete 表示既定主机验收完成；项目仍处于移植前准�
 
 ## 2. 要准备哪些材料
 
+按用户的个人本地实验用途推进，以取得可用材料、跑通工具链为先；不规划模型/SDK 再分发或商业发布。公开 fork、镜像可作为候选来源，不因不是官方直链而拒绝；保留来源 URL、版本、文件清单和 SHA-256，用于排查错版本、缺件或损坏。随包通知保留即可，不另建许可审计批次；公开可下载不等于内容一定匹配。
+
 | 材料 | 获取与核对方式 | 无设备时可做什么 |
 | --- | --- | --- |
 | 上游研究源码 | 固定 `fsr4-hexagon` 的 `8c7a972ab70e5693828a856da71ce711232af463`，保存许可证和变更说明 | 审阅/参数化提取与构图脚本；不执行 Android 启动/解锁脚本 |
-| AMD v07 INT8 quality 源材料 | 从合法取得的 SDK 检查实际文件及适用条款；官方发布入口见下文 | 核对文件、哈希、版本，满足条件后提取；仅有 DLL 时报告缺失 |
+| AMD v07 `i8_quality` 源材料 → W8A8 目标 | 官方 SDK 或可核对内容的公开 fork/镜像；按提取脚本实际输入选材料 | 核对文件、哈希、版本，满足条件后提取；仅有 DLL 时报告缺失 |
 | Qualcomm QAIRT/QNN | 从官方 Software Center 取得并锁定一套 SDK；研究上游引用 2.50，尚未选成本项目已验证版本 | Windows 工具安装、help/version、可支持的转换/量化和元数据导出 |
 | NumPy / ONNX / CPU 推理库 | 根据所选脚本、SDK、Python 的兼容组合锁定，分环境安装 | 小图参考、图结构检查、真实资产可用后的网络对照 |
 | Linux ARM64 runtime / HTP 库 | 只登记 SDK 合法提供的候选文件，记录 ELF、依赖和目标信息 | Windows 上只读解析；装载/执行兼容性等待目标镜像 |
@@ -31,13 +33,15 @@ H 队列 complete 表示既定主机验收完成；项目仍处于移植前准�
 
 AMD 官方 FSR4 发布说明描述的是签名 DLL 和有限源码，不能把“下载了 SDK”直接等同“拿到了提取所需模型”。[AMD 发布说明](https://gpuopen.com/learn/amd-fsr4-gpuopen-release/)。
 
-固定上游提取脚本实际读取 `internal/shaders/fsr4_model_v07_i8_quality/` 下的 `initializers.bin`、`passes_1080.hlsl`、`pre.hlsl`、`post.hlsl`，还交叉核对 `dx12/ffx_provider_fsr4_dx12.cpp`。路径相对于 SDK 的 `Kits/FidelityFX/upscalers/fsr4/`。使用 `FIDELITYFX_SDK_ROOT` 指定来源；文件名和目录存在只是预检，不能替代许可、内容和版本核验。[提取脚本](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/extract/build_weights.py)。
+固定上游提取脚本实际读取 `internal/shaders/fsr4_model_v07_i8_quality/` 下的 `initializers.bin`、`passes_1080.hlsl`、`pre.hlsl`、`post.hlsl`，还交叉核对 `dx12/ffx_provider_fsr4_dx12.cpp`。路径相对于 SDK 的 `Kits/FidelityFX/upscalers/fsr4/`。使用 `FIDELITYFX_SDK_ROOT` 指定来源；文件名和目录存在只是预检，还需内容和版本核验。[提取脚本](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/extract/build_weights.py)。
+
+量化目标明确为 **W8A8（权重 8 位、激活 8 位）**；INT8 是有符号整数类型，不是与 W8A8 互斥的模型版本。固定上游命令使用 `--act_bitwidth 8 --weights_bitwidth 8 --bias_bitwidth 32`，Q/DQ 构图也使用 `np.int8` 零点；中间 ONNX 仍可能含浮点权重及浮点外部输入。因此不预设需要“INT8 → W8A8”转换：先读取实际 encoding，再判断是否需要构图、布局转换、量化或重新校准。记录权重/激活位宽、signedness、scale/offset、量化粒度和外部 I/O dtype；不能仅凭文件名或 W8A8 标签判断 HTP 可运行。[上游命令](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/README.md)、[Q/DQ 构图](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/onnx/build_qdq_clipfree.py)。
 
 QAIRT 是工具与 runtime 的集合，QNN 是相关接口/组件；不能将它们视为单个可随意替换的 DLL。上游记录了 Windows 转换路径和 Python 3.12 环境，同时把 HTP 序列化放在设备上，并注明其离线 prepare 路径需要 Linux host。这只是固定上游组合的证据，不推断所有 SDK 版本的能力。[上游模型说明](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/README.md)。
 
 官方 [Software Center](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community) 是 SDK 获取入口；本轮未登录下载、未验证其具体可获取版本。Qualcomm 的 [AppBuilder 环境说明](https://github.com/qualcomm/qai-appbuilder/blob/main/docs/user_guide.md)提供 SDK 获取和 runtime 布局参考，其中 WoS 运行示例不能当作本机 AMD64 或 Armada 支持证明。最终以取得的 SDK 内本版本 setup 文档、发行说明和实际 `--help` 为准。
 
-许可检查记录来源与适用条款，不做宽泛法律结论。不同来源文件分别保留通知；源码仓库许可不自动覆盖 SDK、权重或生成资产。[上游第三方说明](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/THIRD_PARTY.md)。
+模型、SDK 和生成资产放在忽略的本地目录，不随代码提交；保留现有通知，不把“个人使用”写成任意材料都获授权的结论。只有实际下载需要账号或接受条款时才请用户操作，不为纯离线工具工作增加前置手续。[上游第三方说明](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/THIRD_PARTY.md)。
 
 ## 3. 分批实施与验收
 
@@ -52,7 +56,7 @@ QAIRT 是工具与 runtime 的集合，QNN 是相关接口/组件；不能将它
 
 ### P2：外部资产登记与只读核验
 
-- 产物：`tools/assets/` 中的小型登记/核验工具、合成 fixture。记录组件、来源 URL、版本/commit、许可通知位置、平台/架构、实际文件 SHA-256、用途及缺失原因。
+- 产物：`tools/assets/` 中的小型登记/核验工具、合成 fixture。记录组件、来源 URL、版本/commit、平台/架构、实际文件 SHA-256、用途及缺失原因；随包通知有则记录位置，没有则如实标 unknown，不单独阻塞内容检查。
 - 范围：仅检查调用方明确提供的根目录；私有绝对路径留本地，公开记录使用逻辑名/相对路径。真实资产登记与 H2 synthetic schema 分离，不把 H2 的安全标志改成可用于生产。
 - 验收：完备合成包通过；缺文件、哈希不符、错误格式、路径越界和过大输入确定性拒绝；无实际文件时不得填造哈希。区分文件 present、元数据 verified 与执行 not_run。
 - 依赖：P1；工具测试不需要任何外部资产。
@@ -79,15 +83,15 @@ QAIRT 是工具与 runtime 的集合，QNN 是相关接口/组件；不能将它
 
 ### P6：小图的 QAIRT 转换与量化
 
-- 产物：将 P5 小图转换/量化为所选 SDK 支持的中间表示，读取真实 graph/tensor/encoding 元数据，登记生成链及哈希。
+- 产物：将 P5 小图按 W8A8 目标转换/量化为所选 SDK 支持的中间表示，读取真实 graph/tensor/encoding 元数据，登记生成链及哈希；核对实际权重和激活位宽，不以成功传入参数代替产物检查。
 - 验收：实际转换成功、产物可被配套 metadata 工具读取；校准列表和量化 convention 可追溯；失败保留日志、不发布半成品为成功。若该 Windows 包支持 CPU 执行，则与 P5 比较并注明 backend；否则仅报告 build，CPU SDK 执行保持 not_run。
 - 依赖：P3/P5。HTP context 只在本版 Windows 工具明确支持时作为另行选择的实验；Linux-only prepare 不阻塞本批中间表示验收。小图不命名为 FSR。
 
 ### P7：FSR v07 材料接收与权重提取
 
-- 产物：锁定研究源码和合法模型材料；封装/参数化原有提取流程，将结果写到新的 `artifacts/` 子目录，记录来源、许可和 SHA-256。
+- 产物：锁定研究源码和匹配的模型材料（可来自公开 fork/镜像）；封装/参数化原有提取流程，将结果写到新的 `artifacts/` 子目录，记录来源、版本和 SHA-256，保留随包通知。
 - 验收：实际五类输入齐备、上游自检和 provider 交叉核对通过；解析失败不得把输出标成有效；对自有片段补截断、错误版本和字节序测试。生成 npz/graph spec 不随源码发布。
-- 依赖：P2 和可核验的 AMD 源材料；不依赖 QNN。若只有官方签名 DLL 或材料来源无法核验，本批为 blocked，其它资产无关批次继续。不得用不明 `.bin`、镜像压缩包或 XLSR 顶替。
+- 依赖：P2 和可核验的 AMD 源材料；不依赖 QNN。若只有 DLL、缺实际输入或内容/版本核验失败，本批为 blocked，其它资产无关批次继续。镜像压缩包按同一文件清单检查；不能把任意 `.bin` 或 XLSR 当作匹配的 FSR 材料。
 
 ### P8：FSR 网络子图的 CPU 对照
 

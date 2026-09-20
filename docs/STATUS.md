@@ -31,15 +31,17 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。本轮仅制定计划，下列实现均未启动；设备与游戏仍 `not_run`。
 
+执行约定：个人本地实验、先跑通；FSR 材料允许使用可核对内容的公开 fork/镜像，仅保留必要来源/版本/完整性记录和随包通知，不另做许可审计批次。NPU 量化目标为 W8A8，与 INT8 类型不互斥；是否转换/重新量化由实际 encoding 和工具链决定。模型/SDK 不随源码提交。
+
 | 批次 | 小批次产物 | 依赖/阻塞 | 进度 |
 | --- | --- | --- | --- |
 | P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | not_started |
-| P2 外部资产核验 | 来源/版本/许可位置/哈希登记、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | not_started |
+| P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | not_started |
 | P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；合法包、登录和版本条件 | not_started |
 | P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；真实清单需 P3，合成测试可先做 | not_started |
 | P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | not_started |
-| P6 小图 QAIRT 转换 | 实际转换/量化、元数据导出、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
-| P7 FSR v07 提取 | 合法源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
+| P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
+| P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
 | P8 FSR 子图 CPU 对照 | 真实提取结果的 simulator/ONNX 对照与误差记录 | P7/P5；不声称官方完整等价 | not_started |
 | P9a 资源预算 | 隔离资源上限、背压与完成后回收 | H4；无 SDK/模型依赖 | not_started |
 | P9b 幂等保留 | 去重记录上限、过期通知拒绝与重试语义 | P9a；无 SDK/模型依赖 | not_started |
