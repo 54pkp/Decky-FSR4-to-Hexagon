@@ -1,0 +1,56 @@
+{
+  "schema_version": "host-synthetic-spatial-reference-v1",
+  "example_only": true,
+  "production_ready": false,
+  "validation_gate": "not_run",
+  "conventions": {
+    "coordinate_origin": "top_left",
+    "positive_x": "right",
+    "positive_y": "down",
+    "translation_forward": "dst(x + shift_x, y + shift_y) = src(x, y)",
+    "reprojection_backward_motion_vector": "dst(x, y) = history(x + mv_x, y + mv_y)",
+    "sampling": "integer_nearest_no_interpolation",
+    "out_of_bounds": "json_null",
+    "reset": "reset_true_does_not_sample_history_and_outputs_all_null"
+  },
+  "width": 4,
+  "height": 3,
+  "source": [
+    [1, 2, 3, 4],
+    [5, 6, 7, 8],
+    [9, 10, 11, 12]
+  ],
+  "translation": {
+    "shift_x": 1,
+    "shift_y": 1,
+    "expected": [
+      [null, null, null, null],
+      [null, 1, 2, 3],
+      [null, 5, 6, 7]
+    ]
+  },
+  "reprojection": {
+    "motion_vectors": [
+      [[-1, -1], [-1, -1], [-1, -1], [-1, -1]],
+      [[-1, -1], [-1, -1], [-1, -1], [-1, -1]],
+      [[-1, -1], [-1, -1], [-1, -1], [-1, -1]]
+    ],
+    "expected": [
+      [null, null, null, null],
+      [null, 1, 2, 3],
+      [null, 5, 6, 7]
+    ]
+  },
+  "reset": {
+    "motion_vectors": [
+      [[0, 0], [0, 0], [0, 0], [0, 0]],
+      [[0, 0], [0, 0], [0, 0], [0, 0]],
+      [[0, 0], [0, 0], [0, 0], [0, 0]]
+    ],
+    "expected": [
+      [null, null, null, null],
+      [null, null, null, null],
+      [null, null, null, null]
+    ]
+  }
+}
