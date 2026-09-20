@@ -1,52 +1,42 @@
-# 项目状态
+# 当前状态与下一步
 
-更新日期：2026-09-20。已完成首批 M0 主机侧只读建档工具；不包含超分运行时、设备测试或游戏测试。
+当前开发环境：**Windows；未连接 AYN Odin 3；只做理论、离线和 CPU 验证。**
+目标设备仍为 Odin 3 / Snapdragon 8 Elite / Armada OS，实际镜像、ABI、HTP 和游戏均未验证。首个游戏未定，不阻塞下面的主机队列。
 
-[首页](../README.md) · [路线图](roadmap/README.md) · [证据定义](ai/IMPLEMENTATION_GUIDE.md)
+[首页](../README.md) · [轻量规则](ai/MULTI_AGENT_WORKFLOW.md) · [单次提示](ai/SINGLE_RUN_PROMPT.md) · [Goal 提示](ai/GOAL_PROMPT.md)
 
-## 已交付
+## 已有成果
 
-- 对四个上游仓库的初始源码研究与可行性方案，保留[中英文归档](reference/README.md)。
-- 面向外部访客的中英文 README。
-- M0–M9 十个节点的实施指南、跨模块合同草案、AI 接续指南与报告模板。
-- [Sol 开发 / Astra 审阅工作流](ai/MULTI_AGENT_WORKFLOW.md)、[可续跑 Goal 提示词](ai/GOAL_PROMPT.md)、项目级 Codex 配置、工作卡与审阅包模板，以及[已完成的首批 M0 派工记录](ai/FIRST_BATCH.md)。配置和计划本身不作为实施证据。
-- M0 `draft-0` 设备档案 schema、Linux 只读 collector、离线校验/公开脱敏、匿名 fixture 和主机回归测试；[集成报告](validation/M0/2026-09-20-host-integration.md)与[Astra 修复证据](validation/M0/2026-09-20-review-fixes.md)已记录。它们不代表 Odin 3 或 HTP 已验证。
+M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 Python 回归已实现。
+证据：[主机集成](validation/M0/2026-09-20-host-integration.md)、[修复报告](validation/M0/2026-09-20-review-fixes.md)、[定点复审](validation/M0/2026-09-20-first-batch-rereview.md)。
+已完成的 FIRST_BATCH 不重启。仓库没有可用的 FSR4 超分运行时、NPU 服务或 Decky 插件。
 
-## 实现与验证状态
+## 本阶段队列：Windows / CPU
 
-`not_started` 是节点实现进度；`not_run` 是该类检查尚未运行。这里的文档完成不改变这些状态。
+这是独立的主机准备阶段，H 编号不代替 M0–M9。Goal 启动时冻结下表范围；完成后停止，设备验证留待用户提供环境后另开阶段。每行可拆成数个小批次，单次模式每次只做一批。
 
-| 节点 | 技术路线文档 | 实现进度 | 主机验证 | 设备验证 | 游戏验证 | 实际验收报告 |
-| --- | --- | --- | --- | --- | --- | --- |
-| [M0](roadmap/M0-device-baseline.md) | 初版完成 | in_progress | pass | not_run | not_run | [主机集成](validation/M0/2026-09-20-host-integration.md)；[审阅修复](validation/M0/2026-09-20-review-fixes.md) |
-| [M1](roadmap/M1-npu-platform.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M2](roadmap/M2-fsr4-port.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M3](roadmap/M3-game-probe.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M4](roadmap/M4-end-to-end.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M5](roadmap/M5-temporal-quality.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M6](roadmap/M6-performance.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M7](roadmap/M7-launcher-packaging.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M8](roadmap/M8-decky-integration.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
-| [M9](roadmap/M9-compatibility.md) | 初版完成 | not_started | not_run | not_run | not_run | 尚无 |
+| 项目 | 产物与必需验收 | 依赖 | 进度 |
+| --- | --- | --- | --- |
+| H1 基线可复现 | 用仓库依赖在 Windows 运行现有 M0 unittest 和 fixture→validate→redact 最小链路；记录版本、准确命令、退出码与 skipped 原因。确保新检出无需私有目录。沿用已有工具，不重写框架 | 现有 M0 | not_started |
+| H2 元数据校验 | 小型离线 manifest/tensor 校验器与合成 fixture；检查必需字段、shape/dtype/layout、容量上限及非法元数据；真实资产未知可记录，不能伪造哈希或生产可用状态。合法样例通过、畸形输入确定性拒绝 | H1 | not_started |
+| H3 CPU 数值参考 | 小尺寸确定性数据，覆盖量化/反量化的舍入、饱和和误差，以及明确坐标/MV 方向的平移、重投影和 reset 样例；有独立手算/固定预期与声明容差。只验证选定算子，不称完整 FSR4 | H2 的数据约定 | not_started |
+| H4 同帧生命周期回放 | 一个 Windows CPU harness 使用 H2 输入和 H3 参考算子；同 context 单请求在途，核对 session/context/frame/history/model 身份，拒绝过期输出；reset/失败不污染 history，超时保留在途资源，显式完成后才能回收；成功与错误路径有自动检查 | H2 + H3 | not_started |
 
-某节点不涉及某类验证时，在真实报告中注明“不适用及原因”，不要把不适用写成通过。源码研究与本次 Markdown 检查不填入此处的运行时验收栏。
+边界：不在本阶段加入网络 daemon、完整 NGX DLL、真实 GPU/NPU 执行、Steam 安装器、Decky UI 或游戏兼容矩阵实现。允许为现有合同写最小 CPU 验证，不提前冻结未经设备证明的最终 ABI。实际 FSR4 权重 CPU 重放需要合法资产，作为后续可选实验，不是 H1–H4 的必需项。
 
-## 已知目标与待确认输入
+**完成标准：** H1–H4 的实现、必需测试和短记录全部完成，实质代码/合同经过 Astra 审阅；已知仅适用 Linux/设备的检查列为后置，不能写成 pass。合成数值验证不能证明完整 FSR4、HTP 等价性、帧率、延迟或功耗收益。
 
-| 项目 | 当前信息 |
-| --- | --- |
-| 设备 | AYN Odin 3，来自项目目标指定，尚未现场采集 |
-| SoC | Snapdragon 8 Elite；源码参考为 SM8750/CQ8725S 平台族，实际识别和 QNN 枚举待查 |
-| 系统 | Armada OS，镜像版本、内核、固件运行状态待查 |
-| NPU | 预期 v79，真实 Linux QNN 图执行未验证 |
-| Steam/Proton/FEX/Decky | 实际版本与加载架构待查 |
-| 首个游戏 | 未确定；不能预先发布兼容性结论 |
-| 模型/SDK | 来源、版本和本地可用资产需实施时登记；未随仓库分发 |
+## 当前接续点
 
-设备验收路径的下一步是在明确授权且可访问的 Odin 3 上执行 **M0-C 只读采集与人工复核**，形成真实设备档案后再运行 M1 的真实 QNN/HTP 门槛。设备暂不可访问时，仍可补跑 M0 的 Linux 主机行为，并推进 M1 及后续节点明确允许的无设备工具、fixture、接口和静态核查；这些结果不得替代设备 gate。当前只有 Windows/fixture 主机证据；没有设备运行时失败证据，因此不把“尚未测试”写成“已失败”或“设备不支持”。
+- 下一批：H1。已有历史测试结果可作基线，新机器先验证当前环境与完整 fixture 链路；不要仅因本次文档改造就把 H1 勾选完成。
+- 当前最新记录：[工作流精简](validation/host/2026-09-20-workflow-refactor.md)。
+- 设备、SDK、模型、首个游戏：当前均不要求提供。不要重复请求连接掌机或自动安装 WSL/Linux。
+- 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 
-## 更新规则
+## 后置设备路线
 
-每完成一个工作包，添加真实报告链接、源码提交和最后验证日期，再更新对应状态。保留失败和未运行项目，不能只留下最终绿色结果。若环境/模型/API 改变，旧报告仍可保留，但适用范围不能自动扩大。
+M0 仍为 `in_progress`：现有 Windows 主机证据通过，设备/游戏检查 `not_run`。
+M1–M9 仍为 `not_started`，各运行检查 `not_run`；H 队列推进不会自动改变这些门槛。
+Linux 特有 symlink、进程组、SIGALRM、真实 sysfs/权限行为留待对应环境；Odin 3 的 M0-C 建档、QNN/HTP、游戏回写、画质和性能验证留待设备阶段。
 
-节点 `complete` 要满足其全部必需门槛；只做了主机部分时使用 `in_progress`。开始实施后被缺失环境或外部条件阻断，才写 `blocked`，并指出可继续的独立工作。
+详细技术条件按需查 [M0–M9 路线](roadmap/README.md)和[证据速查](ai/IMPLEMENTATION_GUIDE.md)；原始研究与历史报告保留原日期和结论。

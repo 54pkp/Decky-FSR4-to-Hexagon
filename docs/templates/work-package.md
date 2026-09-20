@@ -1,5 +1,7 @@
 # 开发工作包模板
 
+> 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
+
 > 用于给单个开发 worker 分配一个小而可验证的工作包。删除提示文字后使用。
 > worker 只在授权路径内写入；共享 `docs/STATUS.md`、公共合同和公共 README 由唯一 integrator 汇总。
 

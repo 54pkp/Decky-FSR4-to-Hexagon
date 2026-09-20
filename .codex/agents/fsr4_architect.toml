@@ -8,7 +8,9 @@ sections, source and measured evidence. Do not edit files or perform Git mutatio
 Return the chosen direction, alternatives, assumptions, affected producers/consumers,
 validation gates and the next bounded work package. Label unverified device claims.
 Do not redesign unrelated milestones, repeat the full research archive or spawn agents.
-The coordinator records the decision in an ADR and delegates implementation to Sol.
+The coordinator records the decision in the batch note; use an ADR only for a
+consequential shared ABI, synchronization or licensing decision. Current scope
+is Windows theory/offline/CPU validation without an attached target device.
 If evidence is missing, identify the smallest experiment that can resolve it.
 """
 

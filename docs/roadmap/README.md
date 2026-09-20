@@ -1,5 +1,7 @@
 # 节点技术路线
 
+> 按需参考：当前只推进 [STATUS 的 Windows/CPU 队列](../STATUS.md)。本目录保留完整设备路线，旧提示中的强制工作卡、多报告、设备执行步骤不用于当前阶段；日常以[轻量流程](../ai/MULTI_AGENT_WORKFLOW.md)为准。
+
 [项目首页](../../README.md) · [当前进度](../STATUS.md) · [AI 接续指南](../ai/IMPLEMENTATION_GUIDE.md) · [公共合同](../architecture/CONTRACTS.md) · [历史研究](../reference/README.md)
 
 这些页面主要是供后续开发者和 AI 实施的技术计划，不等于当前运行能力；实时进度以[项目状态](../STATUS.md)及其验证报告为准。M0 主机侧建档工具已经实现并通过现有主机回归，目标设备验收仍未运行；M1–M9 的运行时实现尚未开始。详细指南以中文编写；公共首页和初始研究保留中英文。

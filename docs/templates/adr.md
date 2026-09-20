@@ -1,5 +1,7 @@
 # ADR 模板：技术决定
 
+> 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
+
 复制到 `docs/adr/NNNN-<decision>.md`。模板不是已接受决定；“accepted”表示项目采用该工程决定，不表示硬件验收通过。
 
 - 编号、标题、日期：

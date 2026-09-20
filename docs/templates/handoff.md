@@ -1,5 +1,7 @@
 # 工作包交接模板
 
+> 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
+
 复制到 `docs/validation/Mx/YYYY-MM-DD-<work-package>-handoff.md`。本模板不代表工作已经开始或完成。
 
 ## 当前现场

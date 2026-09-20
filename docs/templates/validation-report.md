@@ -1,5 +1,7 @@
 # 验证报告模板
 
+> 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
+
 这是模板，不是真实测试结果。复制到 `docs/validation/Mx/YYYY-MM-DD-<work-package>.md`，替换所有占位内容；未运行项保留 `not_run`。原始数据放忽略目录，不把本模板本身作为验收证据。
 
 ## 基本信息

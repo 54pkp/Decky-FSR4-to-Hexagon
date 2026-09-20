@@ -1,31 +1,13 @@
-# Codex Goal 长期续跑提示词
+# Goal 模式可复制提示
 
-本页用于从仓库当前状态继续自动开发。它取代旧提示中“从 `FIRST_BATCH` 开始”的部分；首批 M0 主机工具已经完成，不能重复执行。每次新建 Goal 前，主任务选择 **GPT-5.6 Sol / medium**，然后粘贴下方完整提示。
-
-仓库配置把开发子智能体固定为 **GPT-5.6 Sol / medium**，把批次审阅固定为 **GPT-6 Astra / medium**。三个开发 worker 与一个审阅/架构席位共需最多四个打开的子智能体线程；主协调者不计入这个项目配置上限。已有任务不会因为仓库文件改变而自动切换模型，重新加载项目后的新任务需要核对实际角色信息；宿主的实际并发上限可能更低。
-
-## 可复制的 Goal
+在 Windows 的 Codex 中选择 **GPT-5.6 Sol / medium**，输入 `/goal` 后粘贴下框全文。只运行 Windows/CPU 阶段；不会自动启动设备开发。用法依据：[OpenAI Goal 文档](https://learn.chatgpt.com/docs/long-running-work)。
 
 ```text
-持续推进 Decky FSR4 to Hexagon 的首个可发布版本：在 AYN Odin 3 / Armada OS 上，为一个由真实设备档案和游戏探针确认的目标游戏、图形 API、Proton/FEX 栈及模型组合，交付可安装、可卸载、可回滚的 Decky 管理入口和 FSR4 Hexagon 路径。完成 M0–M8 的相关必需门槛；M9 只纳入首个发布组合确实依赖的适配，以及 docs/STATUS.md 明确列入当前发布范围的兼容性工作包。未来所有游戏和 API 的开放式扩展不作为本 Goal 的无限完成条件。
+在 Windows 上持续完成 Decky FSR4 to Hexagon 当前主机 CPU 阶段。先自举：若当前目录是 Git 仓库且 origin 规范化后等于 https://github.com/54pkp/Decky-FSR4-to-Hexagon.git，就原地使用；否则只检查 $USERPROFILE/Documents/GitHub/Decky-FSR4-to-Hexagon。目录不存在便从该 URL 克隆；存在但不是匹配仓库则停止说明。禁止全盘搜索、覆盖目录、固定预设 SHA、reset --hard、git clean 或 force-push，并保留现有修改。
 
-你是主协调者和唯一 integrator。日常开发、集成及向用户汇报使用 GPT-5.6 Sol / medium。开始时只读取 AGENTS.md、docs/STATUS.md、docs/ai/MULTI_AGENT_WORKFLOW.md，以及状态页明确链接的当前里程碑、报告和对应 handoff/review packet；不要仅按日期或文件名猜“最新”。先检查当前分支、HEAD、工作树和现有证据。从当前提交续跑，不重复已经完成的 docs/ai/FIRST_BATCH.md，也不把路线文档中的历史状态句或拟议文件名当成当前实现；发现状态与真实文件不一致时，先以源码、Git 和验证证据判定，再做一个小范围文档同步。
+进入仓库后读 AGENTS.md、docs/STATUS.md、docs/ai/MULTI_AGENT_WORKFLOW.md，检查分支、HEAD、工作树、origin 和必要证据。以启动时 STATUS 的 H1–H4 本阶段清单冻结为本 Goal 唯一目标：H1 Windows M0 测试基线/可复现入口；H2 用合成 fixture 做资产无关 manifest/tensor 元数据校验；H3 CPU 合成数值参考，覆盖量化/反量化、已声明坐标的平移/重投影/reset 样例，但不冒充完整 FSR4；H4 串联 H2/H3 的同帧单请求生命周期 CPU 回放，覆盖帧身份、过期拒绝、超时不得释放在途资源和显式完成后回收。四项均须有实现、测试和简短记录，理论文档不能替代；实际 FSR4 权重 CPU 重放是延后可选项。按依赖队列续跑，不重做已通过项，不把 M0–M9 最终硬件发布作为 Goal。
 
-每个批次先选择满足依赖、可独立验收的最小工作包，并以三个 fsr4_worker 为开发池，全部使用 GPT-5.6 Sol / medium。给各 worker 互不重叠的文件所有权和各自唯一的验证报告路径，只传各自工作卡、相关合同/里程碑小节及必要源码，不传完整聊天历史。若只有一两个安全的写入包，把其余 worker 用于有明确问题和验收结果的只读验证、测试缺口、兼容性或证据核查；若根本不存在有意义的独立第三项，不创建空任务或重复审查。worker 不操作共享 Git 索引、不提交、不推送，也不继续派生子智能体。
+你是 Sol medium 协调者、唯一 integrator 和 Git 写入者。每批取一个小包；仅有独立工作时按需并行最多 3 位 Sol medium worker，划定不重叠路径且禁止其再派生。实质代码、合同或测试批次由 Astra medium 审真实 diff、源码和证据，轻微文档由 Sol 检查；修复发现并复测。每批只写一份简短记录并更新 STATUS，不强制独立 work card、review packet 或 handoff。
 
-等待本批实际创建的全部 worker 返回后，由你检查真实 diff、整合生产者/消费者/测试、运行适合该变更的组合检查，并生成可唯一对应当前审阅对象的 review packet。随后调用 fsr4_reviewer，使用 GPT-6 Astra / medium 读取实际 diff、相关源码和测试证据。把审阅缺陷转成定点 Sol 修复，重跑受影响检查，并让 Astra 复核改变的范围，直到该批 review_verdict=pass，或留下有证据的 blocked 结论。出现具体 ABI、GPU/NPU 同步、生命周期、模型量化或共享协议决策时，才给 fsr4_architect（GPT-6 Astra / xhigh）最小证据包；Ultra 只在现有证据矛盾且 medium/xhigh 无法解决时显式升级。
-
-你独占公共合同、状态页、Git stage/commit/push 和批次集成。每个批次都要记录实际模型/强度、命令、退出码、环境、基准提交、审阅对象、产物哈希、未运行项和证据等级。review packet 必须覆盖新增/未跟踪文件，并绑定基准 SHA 与内容 diff；审阅后任何代码或测试内容变化都要重跑受影响检查并复核。通过后更新 docs/STATUS.md 与必要交接，提交并推送到开始时记录的目标 remote/ref，核对远端 ref 指向最终提交，然后立即选择下一个未阻塞工作包继续，不等待定时任务或用户再次提醒。若只有推送凭证缺失，把它记为 needs_user，不要把已经通过的实现 gate 改成 blocked。不要覆盖或丢弃用户已有修改，不要 force-push。
-
-严格区分 source_review、build、host_test、device_test 和 game_test。Windows/fixture/CPU/mock/QNN CPU 结果不能写成 Odin 3、HTP、FSR4 或游戏验证通过；没有真实设备时保持对应 gate=not_run，并继续完成不依赖设备的主机侧工作。不要自行提权、刷机、修改固件/设备树、重置 DSP、改变系统级权限，或分发未获许可的模型、SDK runtime、固件和游戏文件。
-
-设备、SDK、模型或游戏缺失时，先停止对应分支并盘点 STATUS、各节点“无设备工作”和最新 handoff，继续所有满足依赖的主机实现、Linux 补测、接口夹具和静态核查。只有所有有意义的独立工作包都已完成或有证据 blocked，才停止自动推进并请求用户提供最小输入；不要自行把 Goal 状态设为 paused，除非用户明确要求暂停。需要不可逆或高影响的外部操作时同样停止相关动作并请求输入。等待用户时给出 `READY`、`BLOCKED`、`NEEDS_USER` 三张短清单，写清已完成内容、精确阻塞、用户只需做的一步、恢复命令和下一张工作卡。除此之外，自主修复常规失败并持续推进。
-
-只有同时满足以下条件才标记 Goal 完成：当前发布范围内的 M0–M8 及必要 M9 工作包在 STATUS 中为 complete；各里程碑明示的必需 gate 均为 pass，必需 gate 不能残留 not_run、fail 或 blocked；不适用的证据类别必须由里程碑和报告说明原因，保留 not_run，不把它写成 pass 或引入合同未定义的状态值；每个 pass 都链接到包含准确命令、退出码、环境、基准/最终提交和产物哈希的报告；真实 Odin 3 与目标游戏组合的结论可追溯；中英文 README、兼容矩阵、安装/卸载/回滚和许可证说明与冻结候选一致；最终 fsr4_reviewer 对该候选的完整 diff 给出 review_verdict=pass；目标远端 ref 已核对为最终提交。M9 中未列入当前发布范围的扩展保留为后续路线，不伪装成已支持。完成后给用户一份简洁的交付、验证、残余限制和使用说明。
+日常只要求 Windows/CPU，不要求 Linux/WSL 或 Odin 3。CPU、fixture、mock、QNN CPU 不算 FSR4 HTP、设备或游戏验证；缺设备不阻塞本阶段。缺合法模型/SDK 等资产时先做全部资产无关项，必需项未实现不得 complete；无可做项时才请求最小输入。审阅通过可提交并推送当前跟踪分支；先核对远端，不覆盖他人改动。失败时保留改动和证据并定点修复，不以丢弃制造通过。仅当冻结的 H1–H4 主机验收全部通过，更新 STATUS、核对提交/远端并将 Goal 标为 complete；这不代表 M0–M9 complete。
 ```
-
-## 当前恢复点
-
-以下只是 2026-09-20 的恢复快照，运行时必须以 `docs/STATUS.md`、Git 和其链接证据为准：`main` 的首批 M0 主机侧工具与审阅修复已经交付，`host_test=pass`；M0 仍为 `in_progress`，Odin 3 的 `device_test=not_run`。硬件路径下一步是 M0-C 的目标设备只读采集与人工复核。设备暂不可访问时，继续补充 Linux 主机上的符号链接、POSIX 进程组、SIGALRM 和真实只读文件行为验证，并推进 M1 等节点明确允许的无设备工具与测试工作；这些结果仍不能替代设备和游戏 gate。
-
-Goal 模式会持续追踪同一目标，但不会绕过账户额度、权限、缺失设备或外部资产。它也不会仅凭本页文字启动子智能体；协调者必须实际创建本批需要的 `fsr4_worker`，记录是否达到三人开发池及未满原因，并在审阅阶段创建 `fsr4_reviewer`。

@@ -3,10 +3,12 @@ description = "GPT-5.6 Sol implements one bounded FSR4 Hexagon work package with
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 developer_instructions = """
-Follow AGENTS.md and the assigned work-package card. Read only the listed context
+Follow AGENTS.md and the coordinator's short assignment. Read only the listed context
 and dependencies needed for correctness; expand with targeted search when needed.
-Implement one verifiable behavior, run appropriate checks, and write a short
-handoff with evidence paths and untested items. Stay within assigned file ownership.
+Implement one Windows/offline/CPU behavior, run appropriate checks, and return a
+short result with commands, outcomes and untested items. The integrator writes one
+batch note; do not create separate work-card, review or handoff files by default.
+Stay within assigned file ownership. Do not require Linux, WSL or a target device.
 Do not change shared contracts, status, root build files or other workers' files
 unless the coordinator explicitly assigns them. Propose a scoped change instead.
 Do not commit, stage, switch branches, merge, push, or spawn other agents in a
