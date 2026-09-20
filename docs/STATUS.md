@@ -12,9 +12,9 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 后续审计发现并修复了 public-v1 的路径豁免、序列号类型/拼写和任意 `value` 关系遍历问题；见 [脱敏边界加固](validation/host/2026-09-20-m0-redaction-hardening.md)。
 已完成的 FIRST_BATCH 不重启。仓库没有可用的 FSR4 超分运行时、NPU 服务或 Decky 插件。
 
-## 本阶段队列：Windows / CPU
+## 已完成阶段：H1–H4 Windows / CPU
 
-这是独立的主机准备阶段，H 编号不代替 M0–M9。Goal 启动时冻结下表范围；完成后停止，设备验证留待用户提供环境后另开阶段。每行可拆成数个小批次，单次模式每次只做一批。
+这是已完成的第一阶段主机准备工作，H 编号不代替 M0–M9。保留其验收范围与历史证据；后续单次开发从下面的 P 队列选择，不重启 H 项。
 
 | 项目 | 产物与必需验收 | 依赖 | 进度 |
 | --- | --- | --- | --- |
@@ -27,12 +27,32 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 **完成标准：** H1–H4 的实现、必需测试和短记录全部完成，实质代码/合同经过 Astra 审阅；已知仅适用 Linux/设备的检查列为后置，不能写成 pass。合成数值验证不能证明完整 FSR4、HTP 等价性、帧率、延迟或功耗收益。
 
+## 当前阶段队列：P1–P9 无设备准备
+
+本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。本轮仅制定计划，下列实现均未启动；设备与游戏仍 `not_run`。
+
+| 批次 | 小批次产物 | 依赖/阻塞 | 进度 |
+| --- | --- | --- | --- |
+| P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | not_started |
+| P2 外部资产核验 | 来源/版本/许可位置/哈希登记、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | not_started |
+| P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；合法包、登录和版本条件 | not_started |
+| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；真实清单需 P3，合成测试可先做 | not_started |
+| P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | not_started |
+| P6 小图 QAIRT 转换 | 实际转换/量化、元数据导出、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
+| P7 FSR v07 提取 | 合法源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
+| P8 FSR 子图 CPU 对照 | 真实提取结果的 simulator/ONNX 对照与误差记录 | P7/P5；不声称官方完整等价 | not_started |
+| P9a 资源预算 | 隔离资源上限、背压与完成后回收 | H4；无 SDK/模型依赖 | not_started |
+| P9b 幂等保留 | 去重记录上限、过期通知拒绝与重试语义 | P9a；无 SDK/模型依赖 | not_started |
+| P9c 失败/关闭 | 最小故障/关闭事件、候选 history 与迟到完成测试 | P9a/P9b；无 SDK/模型依赖 | not_started |
+
+选取规则：优先 P1，然后按依赖选一批；资产阻塞只暂停相应分支，可继续 P4 合成部分、P5 或 P9 子批次。P1–P8 加 P9a/P9b/P9c 共 11 个单次批次。每批必须有实际实现/检查和短记录；不能以说明书或 mock 代替真实资产安装、转换或推理的验收。P 队列不包含 Linux/WSL 安装或设备部署。
+
 ## 当前接续点
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- 下一步：设备条件可用后另开阶段处理后置验证；当前 Windows 全仓 host suite 已在 Python 3.12.14 `.venv` 与固定依赖 `jsonschema==4.26.0` 下通过。
-- 当前最新记录：[H4 消费、超时与换代隔离](validation/host/2026-09-20-h4-consumption-timeout-reset.md)。
-- 设备、SDK、模型、首个游戏：当前均不要求提供。不要重复请求连接掌机或自动安装 WSL/Linux。
+- 下一批：P1，补齐可重建的 Windows 环境入口；当前 `.venv` 为 Python 3.12.14 / jsonschema 4.26.0，本轮回归 104 项中 103 通过、1 skipped。
+- 当前最新记录：[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)；H4 实现证据仍见[原记录](validation/host/2026-09-20-h4-consumption-timeout-reset.md)。
+- 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 
 ## 后置设备路线

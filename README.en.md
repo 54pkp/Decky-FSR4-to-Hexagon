@@ -13,7 +13,7 @@ This project explores running **FSR4 neural inference on Qualcomm Hexagon NPUs**
 - `tools/device/collect.py`, a read-only unprivileged Linux collector that does not install software, elevate privileges, modify firmware, unlock hardware, or open a DSP session.
 - `tools/device/profile_tools.py` for offline profile validation and public redaction.
 - Synthetic-only manifest validation, affine-int8, and integer-grid spatial references under `tools/model/`.
-- An incomplete same-frame identity/single-in-flight CPU lifecycle replay under `tools/replay/`.
+- Synthetic CPU lifecycle replay under `tools/replay/`, complete within H4's scope: identity, consumption acknowledgement, timeouts, and generation isolation. Real backend resources and recurrent history are not implemented.
 - Anonymous fixtures and device/model/replay Python regression tests that run on Windows.
 
 These tools establish device facts and test file-handling boundaries. They do not implement FSR4 model execution, a GPU/NPU graphics pipeline, game integration, a launcher, or a Decky plugin. The NPU would also perform only part of the complete upscaling algorithm.
@@ -23,15 +23,21 @@ These tools establish device facts and test file-handling boundaries. They do no
 Python 3.10+ is required. From the repository root, run:
 
 ```powershell
-python -m pip install -r tools/device/requirements-host.txt
-python -m unittest discover -s tests -p "test_*.py" -v
+# Verify that python is Python 3.10+; create once, preserving existing environments
+python --version
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r tools/device/requirements-host.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
+
+If the system default is Python 3.9, use an installed Python 3.10+ executable's full path to create the environment; `jsonschema==4.26.0` does not support 3.9. Use the interpreter in an existing working `.venv` directly. An automated preflight entry point is planned in P1 and is not implemented yet.
 
 This unified device-free check validates only the Python tools, synthetic CPU references, and fixture behavior. It is not Odin 3, CDSP/FastRPC, HTP, complete FSR4, or game validation. Live device collection is Linux-only; see [`tools/device/README.md`](tools/device/README.md).
 
 ## Development entry points
 
 - [Current status and work queue](docs/STATUS.md)
+- [Device-free phase two: FSR/QNN assets, environments, and batch plan](docs/roadmap/HOST_PREPARATION.md) (11 single-run batches; SDK installation and real model acquisition have not started)
 - [Lightweight collaboration rules](docs/ai/MULTI_AGENT_WORKFLOW.md)
 - [Single-run prompt](docs/ai/SINGLE_RUN_PROMPT.md)
 - [Resumable Goal prompt](docs/ai/GOAL_PROMPT.md)

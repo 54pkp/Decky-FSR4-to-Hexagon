@@ -16,7 +16,7 @@ Start with `docs/STATUS.md` and `docs/ai/MULTI_AGENT_WORKFLOW.md`, then relevant
 
 ## Work and evidence
 
-- Pick one small behavior from the H1-H4 queue. Single-run mode finishes one batch, including fixes and handoff, then stops. Goal mode continues the frozen host-phase queue; completing it does not complete the hardware roadmap.
+- Pick one small behavior from the active queue in STATUS (currently P1-P9; H1-H4 are complete). Read docs/roadmap/HOST_PREPARATION.md for its prerequisites and acceptance. Single-run mode finishes one batch, including fixes and handoff, then stops. Goal mode continues only the frozen active host-phase queue; completing it does not complete the hardware roadmap.
 - Use one short batch record plus STATUS. Separate work-card, review-packet and handoff files are optional. Record goal, base revision/diff identity, actual environment/backend, commands/exit codes, result, review, gaps and next action. Hash external inputs/generated numerical artifacts when relevant, not every Markdown file.
 - Follow `docs/ai/IMPLEMENTATION_GUIDE.md` for evidence definitions. Never report source inspection, build, CPU/mock, XLSR, CAS or bilinear results as FSR4 on HTP, device or game validation. Keep unavailable measurements unknown, not zero or pass.
 - Keep schema, producer, consumer and tests consistent. Record routine choices in the batch note; create an ADR only for a consequential ABI, synchronization or licensing decision.

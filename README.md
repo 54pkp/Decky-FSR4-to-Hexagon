@@ -13,7 +13,7 @@
 - Linux 普通用户只读采集器 `tools/device/collect.py`；它不安装软件、提权、改固件、解锁硬件或打开 DSP 会话。
 - 离线档案校验与公开脱敏工具 `tools/device/profile_tools.py`。
 - `tools/model/` 中仅面向合成数据的 manifest 校验、affine int8 和整数网格空间参考。
-- `tools/replay/` 中尚未完成的同帧身份/单在途 CPU 生命周期回放。
+- `tools/replay/` 中已完成 H4 范围的合成 CPU 生命周期回放，覆盖身份、消费确认、超时和换代隔离；真实后端资源与 recurrent history 尚未实现。
 - 匿名 fixture 与 Windows 可运行的 device/model/replay Python 回归测试。
 
 这些工具用于建立设备事实和验证文件处理边界，不包含 FSR4 模型执行、GPU/NPU 图形链路、游戏接入、启动器或 Decky 插件。NPU 也只会承担完整超分算法的一部分。
@@ -23,15 +23,21 @@
 需要 Python 3.10+。在仓库根目录运行：
 
 ```powershell
-python -m pip install -r tools/device/requirements-host.txt
-python -m unittest discover -s tests -p "test_*.py" -v
+# 确认 python 指向 Python 3.10+；首次创建，不覆盖已有环境
+python --version
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r tools/device/requirements-host.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
+
+若系统默认 Python 是 3.9，创建环境时改用已安装的 Python 3.10+ 完整路径；`jsonschema==4.26.0` 不支持 3.9。已有可用 `.venv` 时直接使用其解释器。P1 将提供自动预检入口，当前尚未实现。
 
 该统一入口无需设备，只验证 Python 工具、合成 CPU 参考和 fixture 行为；它不是 Odin 3、CDSP/FastRPC、HTP、完整 FSR4 或游戏验证。实时设备采集仅支持 Linux，使用方法见 [`tools/device/README.md`](tools/device/README.md)。
 
 ## 开发入口
 
 - [当前状态与工作队列](docs/STATUS.md)
+- [无设备阶段二：FSR/QNN 资产、环境与分批计划](docs/roadmap/HOST_PREPARATION.md)（11 个单次批次；尚未安装 SDK 或取得真实模型）
 - [轻量协作规则](docs/ai/MULTI_AGENT_WORKFLOW.md)
 - [单次执行提示词](docs/ai/SINGLE_RUN_PROMPT.md)
 - [可续跑 Goal 提示词](docs/ai/GOAL_PROMPT.md)
