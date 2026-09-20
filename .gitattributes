@@ -2,3 +2,5 @@ tools/device/fixtures/** text eol=lf
 tools/device/fixtures/**/*.bin -text
 tools/model/fixtures/** text eol=lf
 tools/model/fixtures/**/*.bin -text
+tools/replay/fixtures/** text eol=lf
+tools/replay/fixtures/**/*.bin -text
