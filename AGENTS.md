@@ -1,10 +1,10 @@
 # Repository guidance for coding agents
 
-These instructions apply to this repository. Follow the user's current task and preserve existing work. This repository currently contains documentation, not a functioning upscaler.
+These instructions apply to this repository. Follow the user's current task and preserve existing work. This repository contains early M0 host tooling and documentation, not a functioning upscaler.
 
 ## Read only the context needed
 
-- Coordinator: read `docs/STATUS.md`, `docs/ai/MULTI_AGENT_WORKFLOW.md`, and the assigned milestone/work card. Use `docs/ai/FIRST_BATCH.md` for the first M0 batch.
+- Coordinator: read `docs/STATUS.md`, `docs/ai/MULTI_AGENT_WORKFLOW.md`, and the assigned milestone/work card. `docs/ai/FIRST_BATCH.md` is the completed first M0 host batch; do not restart it unless a specific regression requires it.
 - Worker: read the assigned work-package card, relevant contract/milestone sections and necessary source. Do not ingest both READMEs, all milestones or the research archive by default.
 - Reviewer: read the review packet, exact diff, relevant source and test evidence. A summary alone cannot establish correctness.
 - Use `docs/ai/IMPLEMENTATION_GUIDE.md` for evidence definitions and `docs/reference/` only for relevant historical source claims. Expand context with targeted searches when correctness requires it.
@@ -13,9 +13,9 @@ The implementation guides are in Chinese; identifiers and interfaces remain lang
 
 ## Model roles and coordination
 
-- Default coordinator and workers: GPT-5.6 Sol, medium. Batch review: GPT-6 Astra, high; architecture decisions: Astra, xhigh. Ultra is an explicit escalation, not a routine default. Respect the user's explicit selection.
+- Default coordinator and day-to-day user communication: GPT-5.6 Sol, medium. Development workers: GPT-5.6 Sol, high. Batch review: GPT-6 Astra, high; architecture decisions: Astra, xhigh. Ultra is an explicit escalation, not a routine default. Respect the user's explicit selection.
 - Project defaults and custom roles live in `.codex/`; verify the host actually applies them. A prompt mentioning a model does not switch models. If role selection is unavailable, use explicit supported model/effort parameters or report the limitation.
-- Usually use two independent workers, then one focused review. Delegate only bounded work that can proceed independently. Worker/reviewer agents do not recursively delegate.
+- Default to three independent development workers, then one focused review. Give each worker a bounded, non-overlapping package. If only one or two write packages are safe, use the remaining worker for a bounded read-only validation or compatibility task instead of creating conflicting edits. Worker/reviewer agents do not recursively delegate.
 - Give workers small self-contained cards, not full chat history. Return concise results and evidence paths. After repeated attempts without new evidence, escalate a specific decision instead of repeating broad exploration.
 - Shared checkout: one integrator owns Git index/commits and shared status/contracts/build entrypoints. Workers edit only assigned non-overlapping paths and their unique reports; no stage/commit/branch/merge/push or repository-wide formatting.
 - Isolated worktrees may allow worker commits when explicitly assigned. Integrate serially and test the combined result. Only one owner runs target-device operations at a time.

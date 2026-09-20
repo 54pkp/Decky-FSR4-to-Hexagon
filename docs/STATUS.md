@@ -9,7 +9,7 @@
 - 对四个上游仓库的初始源码研究与可行性方案，保留[中英文归档](reference/README.md)。
 - 面向外部访客的中英文 README。
 - M0–M9 十个节点的实施指南、跨模块合同草案、AI 接续指南与报告模板。
-- [Sol 开发 / Astra 审阅工作流](ai/MULTI_AGENT_WORKFLOW.md)、项目级 Codex 配置、工作卡与审阅包模板，以及[首批 M0 派工计划](ai/FIRST_BATCH.md)。配置和计划本身不作为实施证据。
+- [Sol 开发 / Astra 审阅工作流](ai/MULTI_AGENT_WORKFLOW.md)、[可续跑 Goal 提示词](ai/GOAL_PROMPT.md)、项目级 Codex 配置、工作卡与审阅包模板，以及[已完成的首批 M0 派工记录](ai/FIRST_BATCH.md)。配置和计划本身不作为实施证据。
 - M0 `draft-0` 设备档案 schema、Linux 只读 collector、离线校验/公开脱敏、匿名 fixture 和主机回归测试；[集成报告](validation/M0/2026-09-20-host-integration.md)与[Astra 修复证据](validation/M0/2026-09-20-review-fixes.md)已记录。它们不代表 Odin 3 或 HTP 已验证。
 
 ## 实现与验证状态

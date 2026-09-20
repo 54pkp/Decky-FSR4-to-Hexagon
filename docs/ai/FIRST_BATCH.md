@@ -1,6 +1,6 @@
 # 首批开发卡：M0 主机侧只读设备建档
 
-状态：**计划；尚未派工、尚未实现、尚未验证。** 本批只准备可在开发主机验证的 M0 工具；目标 Odin 3 的 `device_test` 仍为 `not_run`，不据此更新 `docs/STATUS.md` 为通过。
+状态：**主机侧已完成并通过定点 Astra 复审；目标设备验证仍为 `not_run`。** 实现、集成与复审证据见 `docs/validation/M0/`；本卡保留为首批工作的历史范围，不再作为下一轮 Goal 的起点。
 
 ## 目标与边界
 
@@ -8,7 +8,7 @@
 
 本批不安装 QNN/驱动，不打开 DSP 会话，不使用或保存 SSH 凭证，不扫描整份家目录，不修改 Steam/系统配置，不提权、不刷固件、不改设备树、不运行 RP6 解锁步骤。采集器只写调用者显式指定的新输出目录；设备上运行属于后续 M0-C，未获真实输出前不得声称 Odin 3、CDSP、FastRPC、HTP 或游戏链路可用。
 
-以下路径目前均为**拟议路径，仓库中尚不存在**；任务执行者必须先检查工作树。`draft-0` 核心语义继续以 `docs/architecture/CONTRACTS.md` 为准，本批只能把 M0 报告的最小字段、来源和错误表达落成 schema，不能顺手修改帧协议、生命周期、统一错误枚举或其它节点合同。
+以下路径是本批计划时冻结的范围，目前实现已存在；后续任务必须先检查工作树和真实 diff。`draft-0` 核心语义继续以 `docs/architecture/CONTRACTS.md` 为准，本批只把 M0 报告的最小字段、来源和错误表达落成 schema，没有扩展到帧协议、生命周期、统一错误枚举或其它节点合同。
 
 ## 分角色小读取包
 
@@ -107,6 +107,8 @@ python tools/device/profile_tools.py redact <private.json> --output <new-public.
 - M2：可并行整理模型来源/许可、manifest schema、tensor/量化元数据校验、GPU 前后处理参考与离线向量；宣称移植成功前必须锁定模型/工具/runtime 哈希，并在目标 GPU/HTP 路径核对 tensor、量化和输出，不能用 XLSR/CAS/双线性结果替代 FSR4。
 - M3：可并行做 PE/ELF 检查器、NGX ABI 探针设计、可重复游戏场景与日志格式；注入/加载或游戏验证前必须确认候选游戏、图形 API、guest PE 架构、Proton/FEX 加载链和可回滚基线。没有候选游戏不阻塞 M1，但不能越级形成游戏兼容结论。
 
-## 可复制给 Sol 协调者的启动提示
+## 历史启动提示
+
+以下提示仅记录首批任务的原始派工方式；该批已经完成，不应再次作为长期 Goal 启动。继续开发请使用 [GOAL_PROMPT.md](GOAL_PROMPT.md)。
 
 > 在 Decky FSR4 to Hexagon 仓库执行 `docs/ai/FIRST_BATCH.md` 的首批 M0 主机侧工作。先让一位 Sol integrator 完成并冻结 S0 的 schema、CLI、fixture/命令替身和校验依赖；S0 合入共同基线后，再按各自小读取包并行派两位 Sol 执行 A 与 B，严格遵守互不重叠的源码、测试和报告路径。两者完成后由 integrator 串行集成并运行拟议主机检查，保存真实命令、退出码和未运行项；冻结 review packet 后交给 Astra 做本批集中审阅，Sol 定点修复，Astra 按影响范围复审。不要改 draft-0 核心协议，不使用 SSH 凭证，不安装/提权/刷固件/修改系统，不创建虚假设备输出；无 Odin 3 实测时保持 `device_test: not_run`，不要把 M0 标为通过。

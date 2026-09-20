@@ -1,7 +1,7 @@
 name = "fsr4_worker"
 description = "GPT-5.6 Sol implements one bounded FSR4 Hexagon work package within its assigned file ownership."
 model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 developer_instructions = """
 Follow AGENTS.md and the assigned work-package card. Read only the listed context
 and dependencies needed for correctness; expand with targeted search when needed.
