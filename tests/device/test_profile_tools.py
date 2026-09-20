@@ -4,7 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
@@ -208,7 +208,8 @@ class ProfileToolsTests(unittest.TestCase):
             self.assertEqual("public", public["profile_kind"])
             self.assertEqual("public-v1", public["redaction"]["policy"])
             self.assertEqual(hashlib.sha256(private_path.read_bytes()).hexdigest(), public["redaction"]["source_profile_sha256"])
-            self.assertEqual(["ev-private-text"], [item["evidence_id"] for item in public["evidence"]])
+            self.assertEqual(1, len(public["evidence"]))
+            self.assertRegex(public["evidence"][0]["evidence_id"], r"^public-evidence-0001-[0-9a-f]{16}$")
             self.assertEqual([], public["graphics"]["egl"]["source"]["evidence_ids"])
 
             item = public["evidence"][0]
@@ -220,6 +221,86 @@ class ProfileToolsTests(unittest.TestCase):
             self.assertEqual(len(payload), item["byte_count"])
             self.assertNotEqual(self.profile["evidence"][0]["sha256"], item["sha256"])
             profile_tools.validate_profile(public, output)
+
+    def test_redaction_preserves_protocol_constants_for_common_user_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            private = json.loads(private_path.read_text(encoding="utf-8"))
+            private["identity"]["user_name"]["value"] = "user"
+            private_path.write_text(json.dumps(private), encoding="utf-8")
+            output = root / "public" / "public.json"
+            profile_tools.redact_profile(private_path, output)
+            public = json.loads(output.read_text(encoding="utf-8"))
+            profile_tools.validate_profile(public, output)
+            kinds = {
+                observation["source"]["kind"]
+                for _, observation in profile_tools._iter_observations(public)
+            }
+            self.assertIn("user_input", kinds)
+            self.assertNotIn("[REDACTED:user]_input", kinds)
+
+    def test_redaction_covers_spaced_paths_serial_fields_and_private_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            private = json.loads(private_path.read_text(encoding="utf-8"))
+            old_evidence = private_path.parent / private["evidence"][0]["path"]
+            sensitive_name = "fixture-user-sentinel Private Notes.txt"
+            renamed = old_evidence.with_name(sensitive_name)
+            old_evidence.rename(renamed)
+            payload = renamed.read_bytes()
+            private["evidence"][0].update(
+                path=f"evidence/{sensitive_name}",
+                sha256=hashlib.sha256(payload).hexdigest(),
+                byte_count=len(payload),
+            )
+            private["os"]["kernel"]["value"] = {
+                "path": "/home/fixture-user-sentinel/Private Notes/SecretProject/game.exe",
+                "serial_number": "SERIAL-FIXTURE-112233",
+            }
+            private_path.write_text(json.dumps(private), encoding="utf-8")
+            output = root / "public" / "public.json"
+            profile_tools.redact_profile(private_path, output)
+            public = json.loads(output.read_text(encoding="utf-8"))
+            rendered = output.read_text(encoding="utf-8") + "\n" + "\n".join(
+                output.parent.joinpath(*PurePosixPath(item["path"]).parts).read_text(encoding="utf-8")
+                for item in public["evidence"]
+            )
+            for sentinel in (
+                "fixture-user-sentinel",
+                "Private Notes",
+                "SecretProject",
+                "SERIAL-FIXTURE-112233",
+            ):
+                self.assertNotIn(sentinel.lower(), rendered.lower())
+            self.assertEqual("[REDACTED:serial]", public["os"]["kernel"]["value"]["serial_number"])
+            self.assertNotIn(sensitive_name, public["evidence"][0]["path"])
+            profile_tools.validate_profile(public, output)
+
+    def test_redaction_refuses_public_evidence_directory_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            public_dir = root / "public"
+            outside = root / "outside"
+            public_dir.mkdir()
+            outside.mkdir()
+            link = public_dir / "evidence"
+            if sys.platform == "win32":
+                linked = subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if linked.returncode != 0:
+                    self.skipTest(f"junction unavailable: {linked.stderr}")
+            else:
+                link.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(profile_tools.InputError):
+                profile_tools.redact_profile(private_path, public_dir / "public.json")
+            self.assertEqual([], list(outside.iterdir()))
 
     def test_redaction_is_deterministic_except_recorded_time(self):
         with tempfile.TemporaryDirectory() as directory:

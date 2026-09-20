@@ -7,7 +7,6 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
 import sys
@@ -207,7 +206,14 @@ def _sensitive_tokens(profile: dict[str, Any]) -> tuple[dict[str, set[str]], lis
             tokens[kind].add(value)
 
     path_patterns = [
-        re.compile(r"(?i)(?:[A-Z]:\\Users\\|/home/|/Users/)[^\\/\s\"']+(?:[\\/][^\s\"']*)?"),
+        re.compile(
+            r"(?i)[A-Z]:\\Users\\[^\\/\s\"']+(?:\\[^\r\n\"'<>|]*?)?"
+            r"(?=\s+[A-Za-z_][A-Za-z0-9_-]*=|[\r\n\"'<>|]|$)"
+        ),
+        re.compile(
+            r"(?i)/(?:home|Users)/[^/\s\"']+(?:/[^\r\n\"'<>|]*?)?"
+            r"(?=\s+[A-Za-z_][A-Za-z0-9_-]*=|[\r\n\"'<>|]|$)"
+        ),
     ]
     return tokens, path_patterns
 
@@ -243,7 +249,18 @@ REDACTION_PRESERVED_KEYS = {
     "policy",
     "status",
     "category",
+    "kind",
+    "method",
+    "profile_kind",
+    "evidence_level",
+    "gate",
+    "visibility",
+    "observed_at",
+    "started_at",
+    "finished_at",
 }
+
+SENSITIVE_FIELD = re.compile(r"(?i)^(?:serial(?:_number)?|machine_id|device_id)$")
 
 
 def _redact_tree(
@@ -256,6 +273,8 @@ def _redact_tree(
     if isinstance(node, str):
         if key in REDACTION_PRESERVED_KEYS:
             return node
+        if key is not None and SENSITIVE_FIELD.fullmatch(key):
+            return PLACEHOLDER["serial"]
         return _redact_text(node, tokens, path_patterns)
     if isinstance(node, list):
         return [_redact_tree(item, tokens, path_patterns, key=key) for item in node]
@@ -296,11 +315,11 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
     }
 
     published: list[tuple[dict[str, Any], bytes, Path]] = []
-    retained_ids: set[str] = set()
-    for item in private["evidence"]:
+    public_id_by_private_id: dict[str, str] = {}
+    for index, item in enumerate(private["evidence"], start=1):
         source_path = private_path.parent.joinpath(*PurePosixPath(item["path"]).parts)
         payload = source_path.read_bytes()
-        if source_path.suffix.lower() not in {".txt", ".log", ".json"}:
+        if source_path.suffix.lower() not in {".txt", ".log", ".json", ".stdout", ".stderr"}:
             continue
         try:
             text = payload.decode("utf-8")
@@ -308,36 +327,45 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
             continue
         redacted_payload = _redact_text(text, tokens, path_patterns).encode("utf-8")
         digest = hashlib.sha256(redacted_payload).hexdigest()
-        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", PurePosixPath(item["path"]).name)
-        safe_id = re.sub(r"[^A-Za-z0-9._-]", "_", item["evidence_id"])
-        relative = f"evidence/public-{safe_id}-{digest[:16]}-{safe_name}"
+        public_id = f"public-evidence-{index:04d}-{digest[:16]}"
+        suffix = source_path.suffix.lower()
+        relative = f"evidence/{public_id}{suffix}"
         destination = output_path.parent.joinpath(*PurePosixPath(relative).parts)
         if destination.exists():
             raise InputError(f"refusing to overwrite existing public evidence: {destination}")
         public_item = copy.deepcopy(item)
         public_item.update(
+            evidence_id=public_id,
+            collection_item_id=f"public-item-{index:04d}",
             path=relative,
             sha256=digest,
             byte_count=len(redacted_payload),
             visibility="public",
         )
         published.append((public_item, redacted_payload, destination))
-        retained_ids.add(item["evidence_id"])
+        public_id_by_private_id[item["evidence_id"]] = public_id
 
     public["evidence"] = [item for item, _, _ in published]
     for _, observation in _iter_observations(public):
         observation["source"]["evidence_ids"] = [
-            evidence_id
+            public_id_by_private_id[evidence_id]
             for evidence_id in observation["source"]["evidence_ids"]
-            if evidence_id in retained_ids
+            if evidence_id in public_id_by_private_id
         ]
 
     # Validate structure and relationships before creating any public artifact.
     validate_profile(public, output_path, verify_files=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_root = output_path.parent.resolve(strict=True)
     try:
         for _, payload, destination in published:
             destination.parent.mkdir(parents=True, exist_ok=True)
+            resolved_parent = destination.parent.resolve(strict=True)
+            if resolved_parent != output_root and output_root not in resolved_parent.parents:
+                raise InputError(f"public evidence destination escapes output directory: {destination}")
+            resolved_destination = destination.resolve(strict=False)
+            if resolved_destination.parent != resolved_parent:
+                raise InputError(f"public evidence destination escapes output directory: {destination}")
             with destination.open("xb") as stream:
                 stream.write(payload)
         with output_path.open("xb") as stream:

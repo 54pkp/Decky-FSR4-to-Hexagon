@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Iterator, Sequence
@@ -118,6 +119,11 @@ class ProductionRunner:
         args = list(argv)
         if not args or shutil.which(args[0]) is None:
             return RunnerResult(args, False, None, b"", b"", False, False, False)
+        process_options: dict[str, Any] = {}
+        if os.name == "posix":
+            process_options["start_new_session"] = True
+        elif os.name == "nt":
+            process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         try:
             process = subprocess.Popen(  # noqa: S603 - fixed argv, deliberately no shell
                 args,
@@ -125,6 +131,7 @@ class ProductionRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
+                **process_options,
             )
         except FileNotFoundError as exc:
             return RunnerResult(args, False, None, b"", str(exc).encode(), False, False, False)
@@ -161,23 +168,61 @@ class ProductionRunner:
             exit_code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            process.terminate()
-            try:
-                exit_code = process.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                exit_code = process.wait()
-        finally:
+            _terminate_process_tree(process)
+            exit_code = process.wait()
+
+        drain_deadline = time.monotonic() + 1.0
+        for thread in threads:
+            thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in threads):
+            # A descendant can retain inherited pipe handles after the direct
+            # child exits. Treat that as a timeout and terminate the process
+            # group; never close a stream while its reader owns the I/O lock.
+            timed_out = True
+            _terminate_process_tree(process)
+            drain_deadline = time.monotonic() + 1.0
             for thread in threads:
-                thread.join(timeout=1.0)
-            process.stdout.close()
-            process.stderr.close()
+                thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+        for thread, stream in zip(threads, (process.stdout, process.stderr)):
+            if not thread.is_alive():
+                stream.close()
         stdout = output.get("stdout", BoundedBytes(b"", False))
         stderr = output.get("stderr", BoundedBytes(b"", False))
+        stdout_truncated = stdout.truncated or threads[0].is_alive()
+        stderr_truncated = stderr.truncated or threads[1].is_alive()
         return RunnerResult(
             args, True, exit_code, stdout.data, stderr.data, timed_out,
-            stdout.truncated, stderr.truncated,
+            stdout_truncated, stderr_truncated,
         )
+
+
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    """Best-effort bounded termination for the isolated command group."""
+    if os.name == "posix":
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=0.5)
+        # The group leader may already have exited while a descendant still
+        # owns inherited pipes, so address the group independently of poll().
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
+    elif os.name == "nt":
+        # CREATE_NEW_PROCESS_GROUP plus taskkill /T is the standard-library
+        # compatible way to include descendants on supported Windows hosts.
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+                check=False,
+                shell=False,
+            )
+    if process.poll() is None:
+        with contextlib.suppress(OSError):
+            process.kill()
 
 
 def safe_fixture_reference(value: str, label: str) -> Path:
@@ -191,8 +236,10 @@ def safe_fixture_reference(value: str, label: str) -> Path:
 
 class FixtureRunner:
     def __init__(self, case_dir: Path) -> None:
-        self.case_dir = case_dir.resolve()
-        commands_path = self.case_dir / "commands.json"
+        self.case_dir = case_dir.resolve(strict=True)
+        commands_path = (self.case_dir / "commands.json").resolve(strict=True)
+        if commands_path.parent != self.case_dir:
+            raise InputError("fixture commands.json escapes case directory")
         try:
             records = json.loads(read_bounded_file(commands_path).data.decode("utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError, ReadTimedOut) as exc:
@@ -258,6 +305,14 @@ class Collector:
         self.output = output
         self.evidence_dir = output / "evidence"
         self.fixture_root = fixture_root.resolve() if fixture_root else None
+        self.fixture_system_root: Path | None = None
+        if self.fixture_root:
+            candidate_root = (self.fixture_root / "root").resolve(strict=True)
+            if self.fixture_root not in candidate_root.parents:
+                raise InputError("fixture root/ escapes case directory")
+            if not candidate_root.is_dir():
+                raise InputError("fixture root/ must be a directory")
+            self.fixture_system_root = candidate_root
         self.runner: ProductionRunner | FixtureRunner = (
             FixtureRunner(self.fixture_root) if self.fixture_root else ProductionRunner()
         )
@@ -274,8 +329,9 @@ class Collector:
             raise CollectionError(f"internal path is not absolute: {linux_path}")
         if self.fixture_root:
             relative = Path(*path.parts[1:])
-            mapped = (self.fixture_root / "root" / relative).resolve()
-            root = (self.fixture_root / "root").resolve()
+            assert self.fixture_system_root is not None
+            mapped = (self.fixture_system_root / relative).resolve()
+            root = self.fixture_system_root
             if mapped != root and root not in mapped.parents:
                 raise InputError(f"fixture system path escapes root: {linux_path}")
             return mapped
@@ -510,8 +566,9 @@ class Collector:
                 path = self.system_path(linux_path)
             else:
                 relative = safe_fixture_reference(linux_path, locator)
-                path = (self.fixture_root / "root" / relative).resolve()
-                fixture_system_root = (self.fixture_root / "root").resolve()
+                assert self.fixture_system_root is not None
+                path = (self.fixture_system_root / relative).resolve()
+                fixture_system_root = self.fixture_system_root
                 if path != fixture_system_root and fixture_system_root not in path.parents:
                     raise InputError(f"fixture user path escapes root: {linux_path!r}")
         else:
