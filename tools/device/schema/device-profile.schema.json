@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decky-fsr4-to-hexagon.invalid/schema/device-profile.draft-0.json",
+  "title": "M0 device profile",
+  "description": "A read-only M0 inventory report. This schema does not represent HTP, game, or device validation by itself.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "example_only",
+    "profile_kind",
+    "device_profile_id",
+    "supersedes",
+    "evidence_level",
+    "gate",
+    "collection",
+    "identity",
+    "hardware",
+    "os",
+    "graphics",
+    "npu",
+    "runtime_stack",
+    "game_candidates",
+    "evidence",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {"const": "draft-0"},
+    "example_only": {"type": "boolean"},
+    "profile_kind": {"enum": ["private", "public"]},
+    "device_profile_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "supersedes": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+      ]
+    },
+    "evidence_level": {
+      "enum": ["source_review", "build", "host_test", "device_test", "game_test"]
+    },
+    "gate": {"enum": ["not_run", "pass", "fail", "blocked"]},
+    "collection": {"$ref": "#/$defs/collection"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "hardware": {"$ref": "#/$defs/hardware"},
+    "os": {"$ref": "#/$defs/os"},
+    "graphics": {"$ref": "#/$defs/graphics"},
+    "npu": {"$ref": "#/$defs/npu"},
+    "runtime_stack": {"$ref": "#/$defs/runtimeStack"},
+    "game_candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/gameCandidate"}
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {"$ref": "#/$defs/evidenceReference"}
+    },
+    "redaction": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/redaction"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"example_only": {"const": true}}, "required": ["example_only"]},
+      "then": {"properties": {"gate": {"const": "not_run"}}}
+    },
+    {
+      "if": {"properties": {"profile_kind": {"const": "private"}}, "required": ["profile_kind"]},
+      "then": {"properties": {"redaction": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"profile_kind": {"const": "public"}}, "required": ["profile_kind"]},
+      "then": {
+        "properties": {
+          "redaction": {"$ref": "#/$defs/redaction"},
+          "evidence": {
+            "items": {
+              "allOf": [
+                {"$ref": "#/$defs/evidenceReference"},
+                {"properties": {"visibility": {"const": "public"}}}
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"collection": {"properties": {"method": {"const": "fixture"}}}},
+        "required": ["collection"]
+      },
+      "then": {
+        "properties": {
+          "example_only": {"const": true},
+          "gate": {"const": "not_run"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "started_at", "finished_at", "tool"],
+      "properties": {
+        "method": {"enum": ["live_linux", "fixture"]},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "finished_at": {"$ref": "#/$defs/timestamp"},
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "commit", "dirty_tree"],
+          "properties": {
+            "name": {"const": "tools/device/collect.py"},
+            "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "dirty_tree": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "evidence_ids"],
+      "properties": {
+        "kind": {"enum": ["file", "command", "metadata", "user_input", "fixture"]},
+        "locator": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "evidence_ids": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "message", "exit_code", "stderr", "stderr_truncated"],
+      "properties": {
+        "category": {"enum": ["missing", "unavailable", "permission_denied", "timeout", "command_failed"]},
+        "message": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "exit_code": {"type": ["integer", "null"]},
+        "stderr": {"type": ["string", "null"], "maxLength": 4096},
+        "stderr_truncated": {"type": "boolean"}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "observed_at", "status", "failure"],
+      "properties": {
+        "value": true,
+        "source": {"$ref": "#/$defs/source"},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "status": {"enum": ["success", "missing", "unavailable", "permission_denied", "timeout", "command_failed"]},
+        "failure": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/failure"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "success"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"type": "null"}}},
+          "else": {
+            "properties": {
+              "value": {"type": "null"},
+              "failure": {"$ref": "#/$defs/failure"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "missing"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"properties": {"category": {"const": "missing"}}}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "unavailable"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"properties": {"category": {"const": "unavailable"}}}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "permission_denied"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"properties": {"category": {"const": "permission_denied"}}}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "timeout"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"properties": {"category": {"const": "timeout"}}}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "command_failed"}}, "required": ["status"]},
+          "then": {"properties": {"failure": {"properties": {"category": {"const": "command_failed"}}}}}
+        }
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host_name", "user_name"],
+      "properties": {
+        "host_name": {"$ref": "#/$defs/observation"},
+        "user_name": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["market_name", "device_tree_model", "device_tree_compatible", "soc_id", "soc_family", "soc_machine", "soc_revision"],
+      "properties": {
+        "market_name": {"$ref": "#/$defs/observation"},
+        "device_tree_model": {"$ref": "#/$defs/observation"},
+        "device_tree_compatible": {"$ref": "#/$defs/observation"},
+        "soc_id": {"$ref": "#/$defs/observation"},
+        "soc_family": {"$ref": "#/$defs/observation"},
+        "soc_machine": {"$ref": "#/$defs/observation"},
+        "soc_revision": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "os": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distribution", "image", "kernel", "libc"],
+      "properties": {
+        "distribution": {"$ref": "#/$defs/observation"},
+        "image": {"$ref": "#/$defs/observation"},
+        "kernel": {"$ref": "#/$defs/observation"},
+        "libc": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "graphics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vulkan", "egl"],
+      "properties": {
+        "vulkan": {"$ref": "#/$defs/observation"},
+        "egl": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "npu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remoteproc_inventory", "cdsp_candidates", "fastrpc_nodes", "dma_heap_nodes"],
+      "properties": {
+        "remoteproc_inventory": {"$ref": "#/$defs/observation"},
+        "cdsp_candidates": {"$ref": "#/$defs/observation"},
+        "fastrpc_nodes": {"$ref": "#/$defs/observation"},
+        "dma_heap_nodes": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "runtimeStack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bootc", "steam", "proton", "guest_executable"],
+      "properties": {
+        "bootc": {"$ref": "#/$defs/observation"},
+        "steam": {"$ref": "#/$defs/observation"},
+        "proton": {"$ref": "#/$defs/observation"},
+        "guest_executable": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "gameCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "name", "executable"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/identifier"},
+        "name": {"$ref": "#/$defs/observation"},
+        "executable": {"$ref": "#/$defs/observation"}
+      }
+    },
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "collection_item_id", "path", "sha256", "byte_count", "truncated", "visibility"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/identifier"},
+        "collection_item_id": {"$ref": "#/$defs/identifier"},
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_count": {"type": "integer", "minimum": 0},
+        "truncated": {"type": "boolean"},
+        "visibility": {"enum": ["private", "public"]}
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "source_profile_sha256", "redacted_at"],
+      "properties": {
+        "policy": {"const": "public-v1"},
+        "source_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "redacted_at": {"$ref": "#/$defs/timestamp"}
+      }
+    }
+  }
+}
