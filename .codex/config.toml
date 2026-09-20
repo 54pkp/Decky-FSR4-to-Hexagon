@@ -1,0 +1,11 @@
+# Project defaults; an explicit model selected in the app/CLI can override these.
+# Keep machine-specific credentials, permissions and providers out of this file.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-sol"
+default_subagent_reasoning_effort = "medium"
+# Excludes the primary coordinator. Actual host limits may be lower.
+max_concurrent_threads_per_session = 3

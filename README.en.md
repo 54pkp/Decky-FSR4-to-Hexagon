@@ -80,6 +80,7 @@ Work is divided into **M0–M9**, progressing through dependencies and evidence:
 | --- | --- |
 | [Milestone implementation guides](docs/roadmap/README.md) | Implementation steps, interfaces, tests, and acceptance gates for each milestone |
 | [AI implementation handoff guide](docs/ai/IMPLEMENTATION_GUIDE.md) | Starting a work package, retaining evidence, and handing work to another developer or AI |
+| [Multi-agent workflow](docs/ai/MULTI_AGENT_WORKFLOW.md) | Parallel Sol implementation, focused Astra review, first-batch work cards, and context management |
 | [Shared contract draft](docs/architecture/CONTRACTS.md) | Common identifiers, configuration, model, frame, and status semantics |
 | [Project status](docs/STATUS.md) | Separate documentation, implementation, and hardware validation |
 | [Technical research archive](docs/reference/README.md) | Original Chinese/English feasibility studies, source audits, and pinned references |

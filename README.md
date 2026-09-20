@@ -80,6 +80,7 @@ flowchart LR
 | --- | --- |
 | [节点技术路线](docs/roadmap/README.md) | 每个节点的实现步骤、接口、测试和验收条件 |
 | [AI 编程接续指南](docs/ai/IMPLEMENTATION_GUIDE.md) | 如何开始一个工作包、保存证据并交接给下一位开发者或 AI |
+| [多智能体工作流](docs/ai/MULTI_AGENT_WORKFLOW.md) | Sol 并行开发、Astra 集中审阅，以及首批工作卡与上下文管理 |
 | [跨模块合同草案](docs/architecture/CONTRACTS.md) | 公共标识、配置、模型、帧与状态语义 |
 | [项目进度](docs/STATUS.md) | 区分文档完成、代码实现和实机验证 |
 | [技术研究留档](docs/reference/README.md) | 原始中英文可行性研究、源码审计与固定版本来源 |

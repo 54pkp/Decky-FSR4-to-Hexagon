@@ -2,16 +2,24 @@
 
 These instructions apply to this repository. Follow the user's current task and preserve existing work. This repository currently contains documentation, not a functioning upscaler.
 
-## Read first
+## Read only the context needed
 
-1. `README.md` or `README.en.md`: public scope and project status.
-2. `docs/STATUS.md`: actual milestone implementation and validation state.
-3. `docs/ai/IMPLEMENTATION_GUIDE.md`: work-package and handoff workflow.
-4. `docs/architecture/CONTRACTS.md`: shared draft contracts.
-5. The assigned document in `docs/roadmap/`: prerequisites, steps, and acceptance gates.
-6. Relevant sections of `docs/reference/`: historical source evidence, not a current implementation claim.
+- Coordinator: read `docs/STATUS.md`, `docs/ai/MULTI_AGENT_WORKFLOW.md`, and the assigned milestone/work card. Use `docs/ai/FIRST_BATCH.md` for the first M0 batch.
+- Worker: read the assigned work-package card, relevant contract/milestone sections and necessary source. Do not ingest both READMEs, all milestones or the research archive by default.
+- Reviewer: read the review packet, exact diff, relevant source and test evidence. A summary alone cannot establish correctness.
+- Use `docs/ai/IMPLEMENTATION_GUIDE.md` for evidence definitions and `docs/reference/` only for relevant historical source claims. Expand context with targeted searches when correctness requires it.
 
 The implementation guides are in Chinese; identifiers and interfaces remain language-neutral. Follow the user's language preference in reports.
+
+## Model roles and coordination
+
+- Default coordinator and workers: GPT-5.6 Sol, medium. Batch review: GPT-6 Astra, high; architecture decisions: Astra, xhigh. Ultra is an explicit escalation, not a routine default. Respect the user's explicit selection.
+- Project defaults and custom roles live in `.codex/`; verify the host actually applies them. A prompt mentioning a model does not switch models. If role selection is unavailable, use explicit supported model/effort parameters or report the limitation.
+- Usually use two independent workers, then one focused review. Delegate only bounded work that can proceed independently. Worker/reviewer agents do not recursively delegate.
+- Give workers small self-contained cards, not full chat history. Return concise results and evidence paths. After repeated attempts without new evidence, escalate a specific decision instead of repeating broad exploration.
+- Shared checkout: one integrator owns Git index/commits and shared status/contracts/build entrypoints. Workers edit only assigned non-overlapping paths and their unique reports; no stage/commit/branch/merge/push or repository-wide formatting.
+- Isolated worktrees may allow worker commits when explicitly assigned. Integrate serially and test the combined result. Only one owner runs target-device operations at a time.
+- Freeze the review revision and include new/untracked files. Fixes invalidate review of affected code; recheck the changed scope. Only the integrator updates `docs/STATUS.md` after checking evidence.
 
 ## Work within the assigned milestone
 
@@ -35,7 +43,7 @@ The implementation guides are in Chinese; identifiers and interfaces remain lang
 ## Validation and completion
 
 - Run checks appropriate to the change. Test real boundaries and failure behavior, not merely mocks that reproduce the implementation.
-- Use the report and handoff templates in `docs/templates/`. Record exact commands, exit codes, environment, commit, artifact hashes, and what was not run.
+- Use work-package/review-packet templates plus the report/handoff templates in `docs/templates/`. Link existing evidence rather than duplicating logs. Record exact commands, exit codes, environment, revision, artifact hashes, and what was not run.
 - Keep large raw artifacts, SDKs, model files, and game captures in ignored locations. Commit concise publishable reports; do not commit credentials or identifying device data unnecessarily.
 - Update `docs/STATUS.md` only to the level supported by evidence. Documentation completion is not milestone implementation completion.
 - Public README claims must match the status and evidence. Keep the public Chinese/English pages aligned.

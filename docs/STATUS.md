@@ -9,6 +9,7 @@
 - 对四个上游仓库的初始源码研究与可行性方案，保留[中英文归档](reference/README.md)。
 - 面向外部访客的中英文 README。
 - M0–M9 十个节点的实施指南、跨模块合同草案、AI 接续指南与报告模板。
+- [Sol 开发 / Astra 审阅工作流](ai/MULTI_AGENT_WORKFLOW.md)、项目级 Codex 配置、工作卡与审阅包模板，以及[首批 M0 派工计划](ai/FIRST_BATCH.md)。配置和计划不代表 M0 已实施。
 
 ## 实现与验证状态
 
