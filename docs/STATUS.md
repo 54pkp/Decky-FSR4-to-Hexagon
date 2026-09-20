@@ -17,7 +17,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 | 项目 | 产物与必需验收 | 依赖 | 进度 |
 | --- | --- | --- | --- |
-| H1 基线可复现 | 用仓库依赖在 Windows 运行现有 M0 unittest 和 fixture→validate→redact 最小链路；记录版本、准确命令、退出码与 skipped 原因。确保新检出无需私有目录。沿用已有工具，不重写框架 | 现有 M0 | not_started |
+| H1 基线可复现 | 用仓库依赖在 Windows 运行现有 M0 unittest 和 fixture→validate→redact 最小链路；记录版本、准确命令、退出码与 skipped 原因。确保新检出无需私有目录。沿用已有工具，不重写框架 | 现有 M0 | complete |
 | H2 元数据校验 | 小型离线 manifest/tensor 校验器与合成 fixture；检查必需字段、shape/dtype/layout、容量上限及非法元数据；真实资产未知可记录，不能伪造哈希或生产可用状态。合法样例通过、畸形输入确定性拒绝 | H1 | not_started |
 | H3 CPU 数值参考 | 小尺寸确定性数据，覆盖量化/反量化的舍入、饱和和误差，以及明确坐标/MV 方向的平移、重投影和 reset 样例；有独立手算/固定预期与声明容差。只验证选定算子，不称完整 FSR4 | H2 的数据约定 | not_started |
 | H4 同帧生命周期回放 | 一个 Windows CPU harness 使用 H2 输入和 H3 参考算子；同 context 单请求在途，核对 session/context/frame/history/model 身份，拒绝过期输出；reset/失败不污染 history，超时保留在途资源，显式完成后才能回收；成功与错误路径有自动检查 | H2 + H3 | not_started |
@@ -28,8 +28,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 ## 当前接续点
 
-- 下一批：H1。已有历史测试结果可作基线，新机器先验证当前环境与完整 fixture 链路；不要仅因本次文档改造就把 H1 勾选完成。
-- 当前最新记录：[工作流精简](validation/host/2026-09-20-workflow-refactor.md)。
+- 下一批：H2 元数据校验；先冻结资产无关的 manifest/tensor 字段、shape/dtype/layout 和容量上限，不启动真实模型或设备工作。
+- 当前最新记录：[H1 Windows 基线可复现](validation/host/2026-09-20-h1-windows-baseline.md)。
 - 设备、SDK、模型、首个游戏：当前均不要求提供。不要重复请求连接掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 

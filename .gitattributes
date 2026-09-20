@@ -1,0 +1,2 @@
+tools/device/fixtures/** text eol=lf
+tools/device/fixtures/**/*.bin -text
