@@ -226,19 +226,21 @@ class ProfileToolsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             private_path = self._redaction_input(root)
-            private = json.loads(private_path.read_text(encoding="utf-8"))
-            private["identity"]["user_name"]["value"] = "user"
-            private_path.write_text(json.dumps(private), encoding="utf-8")
-            output = root / "public" / "public.json"
-            profile_tools.redact_profile(private_path, output)
-            public = json.loads(output.read_text(encoding="utf-8"))
-            profile_tools.validate_profile(public, output)
-            kinds = {
-                observation["source"]["kind"]
-                for _, observation in profile_tools._iter_observations(public)
-            }
-            self.assertIn("user_input", kinds)
-            self.assertNotIn("[REDACTED:user]_input", kinds)
+            original = json.loads(private_path.read_text(encoding="utf-8"))
+            for index, user_name in enumerate(("user", "dev")):
+                private = copy.deepcopy(original)
+                private["identity"]["user_name"]["value"] = user_name
+                private_path.write_text(json.dumps(private), encoding="utf-8")
+                output = root / f"public-{index}" / "public.json"
+                profile_tools.redact_profile(private_path, output)
+                public = json.loads(output.read_text(encoding="utf-8"))
+                profile_tools.validate_profile(public, output)
+                kinds = {
+                    observation["source"]["kind"]
+                    for _, observation in profile_tools._iter_observations(public)
+                }
+                self.assertIn("user_input", kinds)
+                self.assertEqual("tools/device/collect.py", public["collection"]["tool"]["name"])
 
     def test_redaction_covers_spaced_paths_serial_fields_and_private_names(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -259,6 +261,19 @@ class ProfileToolsTests(unittest.TestCase):
                 "path": "/home/fixture-user-sentinel/Private Notes/SecretProject/game.exe",
                 "serial_number": "SERIAL-FIXTURE-112233",
             }
+            json_path = private_path.parent / "evidence" / "private-structured.json"
+            json_payload = b'{"serial_number":"SERIAL-FIXTURE-JSON-445566"}\n'
+            json_path.write_bytes(json_payload)
+            private["evidence"].append({
+                "evidence_id": "ev-private-json",
+                "collection_item_id": "structured-json",
+                "path": "evidence/private-structured.json",
+                "sha256": hashlib.sha256(json_payload).hexdigest(),
+                "byte_count": len(json_payload),
+                "truncated": False,
+                "visibility": "private",
+            })
+            private["os"]["kernel"]["source"]["evidence_ids"].append("ev-private-json")
             private_path.write_text(json.dumps(private), encoding="utf-8")
             output = root / "public" / "public.json"
             profile_tools.redact_profile(private_path, output)
@@ -272,6 +287,7 @@ class ProfileToolsTests(unittest.TestCase):
                 "Private Notes",
                 "SecretProject",
                 "SERIAL-FIXTURE-112233",
+                "SERIAL-FIXTURE-JSON-445566",
             ):
                 self.assertNotIn(sentinel.lower(), rendered.lower())
             self.assertEqual("[REDACTED:serial]", public["os"]["kernel"]["value"]["serial_number"])

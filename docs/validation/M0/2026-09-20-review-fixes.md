@@ -34,28 +34,31 @@ actual_backend: none
 | 检查 ID | 实际命令/操作 | 退出码 | 观察结果 | gate |
 | --- | --- | ---: | --- | --- |
 | F-SYNTAX | `python -m py_compile tools/device/collect.py tools/device/profile_tools.py tests/device/test_collect.py tests/device/test_profile_tools.py` | 0 | 修复范围可编译 | pass |
-| F-SUITE | `python -m unittest discover -s tests/device -v` | 0 | 24 项：22 pass、2 skip | pass |
+| F-SUITE | `python -m unittest discover -s tests/device -v` | 0 | 26 项：24 pass、2 skip | pass |
 | F-PROCESS-TREE | 子进程生成继承 pipe 的 30 秒后代，runner timeout 0.1 秒 | 0 | runner 在 4 秒门槛内返回 `timed_out` | pass |
+| F-LEADER-EXIT | leader 正常退出，30 秒后代继承 pipe | 0 | Windows Job Object 关闭后后代 PID 不存活，reader 线程清零 | pass |
 | F-FIXTURE-ROOT | 普通 case 的 `root/` junction 指向 case 外 | 0 | 回归测试要求 `InputError`，本机通过 | pass |
 | F-COMMANDS-LINK | `commands.json` 指向 case 外 | null | Windows 普通文件 symlink 权限不可用，skip；源码 containment 已实现 | not_run |
-| F-REDACTION | `user_name=user`、含空格 home path、结构化 serial、敏感 private basename/ID | 0 | 协议字段仍合法；所有哨兵从公开 profile/evidence/路径消失 | pass |
+| F-REDACTION | `user_name=user/dev`、含空格 home path、结构化 serial、敏感 private basename/ID | 0 | `source.kind`/固定工具名仍合法；所有哨兵从公开 profile/evidence/路径消失 | pass |
+| F-JSON-EVIDENCE | `.json` evidence 内结构化 `serial_number` | 0 | 解析后按字段语义脱敏、重新序列化并重算 hash | pass |
+| F-FIXTURE-INPUT | 缺失 `commands.json` 或 `root/` | 2 / 2 | CLI 归类为输入错误，不回归成 fatal 3 | pass |
 | F-PUBLIC-DEST | `public/evidence` junction 指向 sibling | 0 | redact 拒绝，外部目录保持空 | pass |
 | F-ROUNDTRIP | collector fixture → private validate → redact → public validate | 0/0/0/0 | 组合通过；公开 evidence 5 项且均为 public | pass |
 | F-EVIDENCE-SYMLINK | 私有 evidence 文件 symlink 逃逸 | null | Windows WinError 1314，原有测试 skip；resolved containment 保留 | not_run |
 | F-DEVICE | Odin 3 device_test | null | 未连接设备 | not_run |
 
-最终组合临时目录：`%TEMP%/decky-m0-review-fix-0353a5fad7bb484ca30cddf3dae92c21/`。
+最终组合临时目录：`%TEMP%/decky-m0-review-final-075631bba92b44fd8e75cca0f6a91a02/`。
 
 最终修复工作区源码 SHA-256（提交后以复审 diff 身份为准）：
 
-- `collect.py`: `6f566def4e5be8827c99b213078562fefd28f108af3091c0f5f311f85cd7a737`
-- `profile_tools.py`: `422af3279c1612ba6bd8fed285c6bbe3c9255e7318f415044f2ee399b097a2a4`
-- `test_collect.py`: `d41f05acebf302b487b497a042d81610db415aa0ae98496173002f69ce14320c`
-- `test_profile_tools.py`: `5c44615ddc493d01adcd3a18e1eb0bad75c7f4b3d7dae9bd79e9b3ffa033046b`
+- `collect.py`: `8febc5a973988dfc1a2af47c70d3ff937c9e43f7cfb061330f6bf917cb3da79d`
+- `profile_tools.py`: `ec9d67d86bed0dc6a49293b5b5bc14d41e66311ebcd9380db5840c022b3847ac`
+- `test_collect.py`: `c4b94c4ca29a7ade909c8b69fe36c61d6d3099df124c7ee8339eb342703fd0b7`
+- `test_profile_tools.py`: `26a3cb59a26008172c0ae834058b3e6d64e17abb9b5636815d2754aa57e61a86`
 
-组合产物：private profile `078c516908fef52fcdd5016344b73de9a46189ff66161e22f75cfa694f141726`；
-manifest `3476e9d55bb7ac5db66f9b85a555bb3ac853bb6c2d69c3e83a81ebd4d24ae48e`；
-public profile `2f0cb85caef0e2d8e2006da4317ab0708d725a54a1194557531deb013c1483db`。
+组合产物：private profile `ccedc155583d0f18e7d63d4e45e8dc2a80be8a910dc1e05924d8dceebbedfcdd`；
+manifest `6a169d9e9e98be30149afbfae94ebb21422315574e7aba0d3a2ec3b18c892ab`；
+public profile `890885818dae8c8f60e2f706958998838fcf63fc5c3a882d406f1f8ad04617a7`。
 
 ## 残余风险与证据边界
 

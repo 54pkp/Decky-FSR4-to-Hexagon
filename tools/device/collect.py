@@ -140,6 +140,7 @@ class ProductionRunner:
         except OSError as exc:
             return RunnerResult(args, True, None, b"", str(exc).encode(), False, False, False)
 
+        windows_job = _WindowsJob.attach(process) if os.name == "nt" else None
         output: dict[str, BoundedBytes] = {}
 
         def drain(name: str, stream: Any) -> None:
@@ -158,8 +159,18 @@ class ProductionRunner:
 
         assert process.stdout is not None and process.stderr is not None
         threads = [
-            threading.Thread(target=drain, args=("stdout", process.stdout), daemon=True),
-            threading.Thread(target=drain, args=("stderr", process.stderr), daemon=True),
+            threading.Thread(
+                target=drain,
+                args=("stdout", process.stdout),
+                name=f"device-collector-stdout-{process.pid}",
+                daemon=True,
+            ),
+            threading.Thread(
+                target=drain,
+                args=("stderr", process.stderr),
+                name=f"device-collector-stderr-{process.pid}",
+                daemon=True,
+            ),
         ]
         for thread in threads:
             thread.start()
@@ -168,8 +179,14 @@ class ProductionRunner:
             exit_code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            _terminate_process_tree(process)
+            _terminate_process_tree(process, windows_job)
             exit_code = process.wait()
+
+        # A successful command is not allowed to leave background descendants.
+        # Closing a Windows kill-on-close job also releases inherited pipes when
+        # the direct leader exited before the descendants.
+        if windows_job is not None:
+            windows_job.close()
 
         drain_deadline = time.monotonic() + 1.0
         for thread in threads:
@@ -179,7 +196,7 @@ class ProductionRunner:
             # child exits. Treat that as a timeout and terminate the process
             # group; never close a stream while its reader owns the I/O lock.
             timed_out = True
-            _terminate_process_tree(process)
+            _terminate_process_tree(process, windows_job)
             drain_deadline = time.monotonic() + 1.0
             for thread in threads:
                 thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
@@ -196,7 +213,90 @@ class ProductionRunner:
         )
 
 
-def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+class _WindowsJob:
+    """Kill-on-close Windows job containing one collector command tree."""
+
+    def __init__(self, handle: int, kernel32: Any) -> None:
+        self.handle = handle
+        self.kernel32 = kernel32
+
+    @classmethod
+    def attach(cls, process: subprocess.Popen[bytes]) -> "_WindowsJob | None":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("PerProcessUserTimeLimit", ctypes.c_longlong),
+                    ("PerJobUserTimeLimit", ctypes.c_longlong),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD),
+                ]
+
+            class IO_COUNTERS(ctypes.Structure):
+                _fields_ = [(name, ctypes.c_ulonglong) for name in (
+                    "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                    "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+                )]
+
+            class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                    ("IoInfo", IO_COUNTERS),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t),
+                ]
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+            kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+            kernel32.SetInformationJobObject.argtypes = [
+                wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD
+            ]
+            kernel32.SetInformationJobObject.restype = wintypes.BOOL
+            kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+            kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+            kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+            kernel32.TerminateJobObject.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.CreateJobObjectW(None, None)
+            if not handle:
+                return None
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = 0x00002000  # KILL_ON_JOB_CLOSE
+            configured = kernel32.SetInformationJobObject(
+                handle, 9, ctypes.byref(info), ctypes.sizeof(info)
+            )
+            assigned = configured and kernel32.AssignProcessToJobObject(handle, process._handle)
+            if not assigned:
+                kernel32.CloseHandle(handle)
+                return None
+            return cls(handle, kernel32)
+        except (AttributeError, OSError):
+            return None
+
+    def terminate(self) -> None:
+        if self.handle:
+            self.kernel32.TerminateJobObject(self.handle, 1)
+
+    def close(self) -> None:
+        if self.handle:
+            self.kernel32.CloseHandle(self.handle)
+            self.handle = 0
+
+
+def _terminate_process_tree(
+    process: subprocess.Popen[bytes], windows_job: _WindowsJob | None = None
+) -> None:
     """Best-effort bounded termination for the isolated command group."""
     if os.name == "posix":
         with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -208,6 +308,8 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(process.pid, signal.SIGKILL)
     elif os.name == "nt":
+        if windows_job is not None and windows_job.handle:
+            windows_job.terminate()
         # CREATE_NEW_PROCESS_GROUP plus taskkill /T is the standard-library
         # compatible way to include descendants on supported Windows hosts.
         with contextlib.suppress(OSError, subprocess.SubprocessError):
@@ -236,8 +338,11 @@ def safe_fixture_reference(value: str, label: str) -> Path:
 
 class FixtureRunner:
     def __init__(self, case_dir: Path) -> None:
-        self.case_dir = case_dir.resolve(strict=True)
-        commands_path = (self.case_dir / "commands.json").resolve(strict=True)
+        try:
+            self.case_dir = case_dir.resolve(strict=True)
+            commands_path = (self.case_dir / "commands.json").resolve(strict=True)
+        except OSError as exc:
+            raise InputError(f"fixture case or commands.json is unavailable: {exc}") from exc
         if commands_path.parent != self.case_dir:
             raise InputError("fixture commands.json escapes case directory")
         try:
@@ -307,7 +412,10 @@ class Collector:
         self.fixture_root = fixture_root.resolve() if fixture_root else None
         self.fixture_system_root: Path | None = None
         if self.fixture_root:
-            candidate_root = (self.fixture_root / "root").resolve(strict=True)
+            try:
+                candidate_root = (self.fixture_root / "root").resolve(strict=True)
+            except OSError as exc:
+                raise InputError(f"fixture root/ is unavailable: {exc}") from exc
             if self.fixture_root not in candidate_root.parents:
                 raise InputError("fixture root/ escapes case directory")
             if not candidate_root.is_dir():

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -76,6 +77,64 @@ class CollectorSafetyTests(unittest.TestCase):
             (case / "commands.json").symlink_to(outside)
             with self.assertRaises(device_collect.InputError):
                 device_collect.Collector(base / "output", case, [])
+
+    def test_missing_fixture_contract_paths_are_input_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            missing_commands = base / "missing-commands"
+            missing_commands.mkdir()
+            with self.assertRaises(device_collect.InputError):
+                device_collect.Collector(base / "out-one", missing_commands, [])
+            missing_commands_cli = subprocess.run(
+                [sys.executable, str(TOOL), "--fixture-root", str(missing_commands),
+                 "--output", str(base / "out-one-cli")],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(2, missing_commands_cli.returncode)
+
+            missing_root = base / "missing-root"
+            missing_root.mkdir()
+            (missing_root / "commands.json").write_text("[]\n", encoding="utf-8")
+            with self.assertRaises(device_collect.InputError):
+                device_collect.Collector(base / "out-two", missing_root, [])
+            missing_root_cli = subprocess.run(
+                [sys.executable, str(TOOL), "--fixture-root", str(missing_root),
+                 "--output", str(base / "out-two-cli")],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(2, missing_root_cli.returncode)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
+    def test_normal_leader_exit_does_not_leave_pipe_holding_descendant(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            grandchild = "import time; time.sleep(30)"
+            leader = (
+                "import pathlib,subprocess,sys; "
+                f"p=subprocess.Popen([sys.executable,'-c',{grandchild!r}]); "
+                f"pathlib.Path({str(pid_path)!r}).write_text(str(p.pid))"
+            )
+            started = time.monotonic()
+            device_collect.ProductionRunner.run([sys.executable, "-c", leader], 2.0)
+            self.assertLess(time.monotonic() - started, 4.0)
+            descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+
+            import ctypes
+            process_query_limited_information = 0x1000
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                handle = ctypes.windll.kernel32.OpenProcess(
+                    process_query_limited_information, False, descendant_pid
+                )
+                if not handle:
+                    break
+                ctypes.windll.kernel32.CloseHandle(handle)
+                time.sleep(0.05)
+            else:
+                self.fail(f"descendant process {descendant_pid} survived runner return")
+            self.assertFalse(
+                any(thread.name.startswith("device-collector-") for thread in threading.enumerate())
+            )
 
 
 if __name__ == "__main__":

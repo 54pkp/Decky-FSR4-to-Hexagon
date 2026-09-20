@@ -258,6 +258,7 @@ REDACTION_PRESERVED_KEYS = {
     "observed_at",
     "started_at",
     "finished_at",
+    "candidate_id",
 }
 
 SENSITIVE_FIELD = re.compile(r"(?i)^(?:serial(?:_number)?|machine_id|device_id)$")
@@ -269,18 +270,24 @@ def _redact_tree(
     path_patterns: list[re.Pattern[str]],
     *,
     key: str | None = None,
+    path: tuple[Any, ...] = (),
 ) -> Any:
     if isinstance(node, str):
-        if key in REDACTION_PRESERVED_KEYS:
+        if key in REDACTION_PRESERVED_KEYS or path == ("collection", "tool", "name"):
             return node
         if key is not None and SENSITIVE_FIELD.fullmatch(key):
             return PLACEHOLDER["serial"]
         return _redact_text(node, tokens, path_patterns)
     if isinstance(node, list):
-        return [_redact_tree(item, tokens, path_patterns, key=key) for item in node]
+        return [
+            _redact_tree(item, tokens, path_patterns, key=key, path=path + (index,))
+            for index, item in enumerate(node)
+        ]
     if isinstance(node, dict):
         return {
-            child_key: _redact_tree(value, tokens, path_patterns, key=child_key)
+            child_key: _redact_tree(
+                value, tokens, path_patterns, key=child_key, path=path + (child_key,)
+            )
             for child_key, value in node.items()
         }
     return node
@@ -288,6 +295,29 @@ def _redact_tree(
 
 def _profile_bytes(profile: dict[str, Any]) -> bytes:
     return (json.dumps(profile, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _redact_evidence_payload(
+    source_path: Path,
+    payload: bytes,
+    tokens: dict[str, set[str]],
+    path_patterns: list[re.Pattern[str]],
+) -> bytes | None:
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if source_path.suffix.lower() == ".json":
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        else:
+            redacted = _redact_tree(document, tokens, path_patterns)
+            return _profile_bytes(redacted) if isinstance(redacted, dict) else (
+                json.dumps(redacted, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+    return _redact_text(text, tokens, path_patterns).encode("utf-8")
 
 
 def _utc_now() -> str:
@@ -321,11 +351,9 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
         payload = source_path.read_bytes()
         if source_path.suffix.lower() not in {".txt", ".log", ".json", ".stdout", ".stderr"}:
             continue
-        try:
-            text = payload.decode("utf-8")
-        except UnicodeDecodeError:
+        redacted_payload = _redact_evidence_payload(source_path, payload, tokens, path_patterns)
+        if redacted_payload is None:
             continue
-        redacted_payload = _redact_text(text, tokens, path_patterns).encode("utf-8")
         digest = hashlib.sha256(redacted_payload).hexdigest()
         public_id = f"public-evidence-{index:04d}-{digest[:16]}"
         suffix = source_path.suffix.lower()
