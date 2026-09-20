@@ -4,13 +4,13 @@
 
 ## 1. 默认分工
 
-推荐 **1 位 Sol Medium 协调者 + 3 位 Sol High 开发者 + 1 位按批次调用的 Astra**。三个开发者处理互不重叠的实现、测试或只读验证工作包。若安全可写的工作包不足三个，剩余开发者承担独立的只读验证或兼容性核查，不为凑数量并发修改同一接口。Astra 不需要持续读取所有开发日志，也不需要在每次小修复后重审整个项目。
+推荐 **1 位 Sol Medium 协调者 + 3 位 Sol Medium 开发者 + 1 位按批次调用的 Astra Medium 审阅者**。三个开发者处理互不重叠的实现、测试或只读验证工作包。若安全可写的工作包不足三个，剩余开发者承担独立的只读验证或兼容性核查，不为凑数量并发修改同一接口。Astra 不需要持续读取所有开发日志，也不需要在每次小修复后重审整个项目。
 
 | 角色 | 默认模型 / 强度 | 职责 | 调用时机 |
 | --- | --- | --- | --- |
 | 主协调者 / integrator | GPT-5.6 Sol / medium | 拆工作卡、分配文件、汇总证据、集成与更新状态 | 每个批次 |
-| `fsr4_worker`，默认三位 | GPT-5.6 Sol / high | 独立实现、测试或只读验证，短交接 | 每批按不重叠工作包并行 |
-| `fsr4_reviewer` | GPT-6 Astra / high | 审真实 diff、源码与测试，指出正确性问题 | 一个批次集成后；关键修复后复核 |
+| `fsr4_worker`，默认三位 | GPT-5.6 Sol / medium | 独立实现、测试或只读验证，短交接 | 每批按不重叠工作包并行 |
+| `fsr4_reviewer` | GPT-6 Astra / medium | 审真实 diff、源码与测试，指出正确性问题 | 一个批次集成后；关键修复后复核 |
 | `fsr4_architect` | GPT-6 Astra / xhigh | 决定协议、ABI、GPU/NPU 同步和模型路线 | 有具体架构问题时 |
 
 Ultra 留给证据相互矛盾、复杂并发/数值故障等难题，由当前客户端支持的模型设置显式选择，不作为每轮默认。这里的强度是工程起点，并非质量或节省比例保证；实际模型和推理强度要记录在工作卡中。
@@ -35,7 +35,7 @@ flowchart TD
 
 ## 2. 在 Codex 中如何使用
 
-仓库的 [.codex/config.toml](../../.codex/config.toml) 将主模型设为 Sol medium、默认子模型设为 Sol high，子智能体并发上限设为 4（不含主协调者）。其中三个席位用于开发 worker，第四个席位供 Astra reviewer 或 architect 使用；工作流本身限制开发 worker 为三个。实际可用槽位取配置、客户端和宿主限制中更严格者。
+仓库的 [.codex/config.toml](../../.codex/config.toml) 将主模型和默认子模型设为 Sol medium，子智能体并发上限设为 4（不含主协调者）。工作流本身限制同时开发的 worker 为三个；第四个席位用于在宿主仍保留已完成 worker 线程时启动 Astra reviewer，或按需启动 architect，不代表允许第四个开发 worker。实际可用槽位取配置、客户端和宿主限制中更严格者。
 
 三个独立角色文件位于 [.codex/agents/](../../.codex/agents/)。它们同时声明模型与推理强度，避免 worker 继承主线程的 Astra Ultra。worker、reviewer、architect 都关闭继续分派的能力，协调者负责派工；审阅/架构角色按指令只读，不靠仓库配置更改用户的权限模式。
 
@@ -43,9 +43,9 @@ flowchart TD
 
 1. 在这个仓库中开启下一次开发任务，主模型选择 **GPT-5.6 Sol / Medium**。已有任务显式选择的 Astra 不会因写入文件自动切换；换模型也不应被当作清空已有上下文。需要轻量起点时新任务只带工作卡和交接路径。
 2. 提示协调者使用 `fsr4_worker` 执行各工作卡，完成后调用 `fsr4_reviewer`。角色文件配置会影响选择了该角色的新子智能体；文件存在本身不会自动启动团队。
-3. 若当前宿主没有暴露自定义角色选择，使用可用的原生子智能体工具，给三个开发子任务显式指定 `gpt-5.6-sol` 和 `high`；审阅显式指定 `gpt-6-astra` 和 `high`。若工具支持控制历史，采用新上下文/最少历史并传入完整工作卡；不要复制整段聊天。
+3. 若当前宿主没有暴露自定义角色选择，使用可用的原生子智能体工具，给三个开发子任务显式指定 `gpt-5.6-sol` 和 `medium`；审阅显式指定 `gpt-6-astra` 和 `medium`。若工具支持控制历史，采用新上下文/最少历史并传入完整工作卡；不要复制整段聊天。
 4. 创建后核对角色/模型信息或启动参数，记录实际执行模型。配置不支持或模型不可用时报告具体原因，不能静默改为 Astra Ultra 再声称使用 Sol。
-5. 若宿主无法在子智能体间混用模型，可手动开三个 Sol High 任务与一个 Astra High 审阅任务，使用独立 worktree 和同样的文件交接。自动新建用户可见任务仍应遵从用户的明确请求，不由工作流擅自扩张。
+5. 若宿主无法在子智能体间混用模型，可手动开三个 Sol Medium 任务与一个 Astra Medium 审阅任务，使用独立 worktree 和同样的文件交接。自动新建用户可见任务仍应遵从用户的明确请求，不由工作流擅自扩张。
 
 项目配置只对加载它的会话有效；不受信任的项目可能跳过 `.codex` 层，显式会话设置和宿主限制也会影响结果。不要为使配置生效而修改认证、全局权限或整个用户配置。
 
@@ -115,4 +115,4 @@ codex -m gpt-5.6-sol -c model_reasoning_effort=medium
 
 2026-09-20 核对的 [OpenAI 子智能体文档](https://learn.chatgpt.com/docs/agent-configuration/subagents)说明了项目角色 TOML 和模型/强度设置；[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)说明了默认子模型、并发上限及项目层约束。具体额度、上下文和可用强度以当前账户与客户端为准，不把 [API 模型页](https://developers.openai.com/api/docs/models/gpt-5.6-sol)的规格当成 Codex 任务保证。
 
-首批 M0 实际使用两位 Sol Medium worker 并完成 Astra 定点复审，这是当时配置下的历史证据。后续配置改为三位 Sol High worker；需要在重新加载本项目的新任务中核对宿主是否采用角色和强度。语法/本地配置检查不等于已经完成一次使用新组合的运行时开发验收。
+首批 M0 实际使用两位 Sol Medium worker 并完成 Astra 定点复审，这是当时配置下的历史证据。后续配置现为三位 Sol Medium worker 与 Astra Medium reviewer；需要在重新加载本项目的新任务中核对宿主是否采用角色和强度。语法/本地配置检查不等于已经完成一次使用新组合的运行时开发验收。

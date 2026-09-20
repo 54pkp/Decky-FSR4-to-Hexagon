@@ -13,7 +13,7 @@ The implementation guides are in Chinese; identifiers and interfaces remain lang
 
 ## Model roles and coordination
 
-- Default coordinator and day-to-day user communication: GPT-5.6 Sol, medium. Development workers: GPT-5.6 Sol, high. Batch review: GPT-6 Astra, high; architecture decisions: Astra, xhigh. Ultra is an explicit escalation, not a routine default. Respect the user's explicit selection.
+- Default coordinator and day-to-day user communication: GPT-5.6 Sol, medium. Development workers: GPT-5.6 Sol, medium. Batch review: GPT-6 Astra, medium; architecture decisions: Astra, xhigh. Ultra is an explicit escalation, not a routine default. Respect the user's explicit selection.
 - Project defaults and custom roles live in `.codex/`; verify the host actually applies them. A prompt mentioning a model does not switch models. If role selection is unavailable, use explicit supported model/effort parameters or report the limitation.
 - Default to three independent development workers, then one focused review. Give each worker a bounded, non-overlapping package. If only one or two write packages are safe, use the remaining worker for a bounded read-only validation or compatibility task instead of creating conflicting edits. Worker/reviewer agents do not recursively delegate.
 - Give workers small self-contained cards, not full chat history. Return concise results and evidence paths. After repeated attempts without new evidence, escalate a specific decision instead of repeating broad exploration.

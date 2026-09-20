@@ -6,8 +6,8 @@ model_reasoning_effort = "medium"
 [agents]
 enabled = true
 default_subagent_model = "gpt-5.6-sol"
-default_subagent_reasoning_effort = "high"
+default_subagent_reasoning_effort = "medium"
 # Excludes the primary coordinator. Three slots are for development workers;
-# the fourth allows a separate Astra review/architecture agent in the session.
+# the fourth lets review start if completed worker threads remain open.
 # Actual host limits may be lower.
 max_concurrent_threads_per_session = 4

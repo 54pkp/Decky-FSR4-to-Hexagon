@@ -1,6 +1,6 @@
 # M0：设备、系统与兼容栈建档
 
-状态：**未执行；本文是实施路线，不是 Odin 3 实测报告。** 上一节点：无；下一节点：[M1 NPU 平台闸门](M1-npu-platform.md)。
+状态：**进行中；M0-A/M0-B 的主机侧 schema、采集、校验、脱敏与 fixture 已实现，M0-C/M0-D 的 Odin 3 实测和基线冻结尚未执行。** 本文仍是实施路线，不是 Odin 3 实测报告。上一节点：无；下一节点：[M1 NPU 平台闸门](M1-npu-platform.md)。
 
 执行前阅读 [AI 实施总则](../ai/IMPLEMENTATION_GUIDE.md)、[共享合同](../architecture/CONTRACTS.md) 和 [项目状态](../STATUS.md)。历史判断保留在 [2026-09-20 可行性研究](../reference/2026-09-20-feasibility.zh-CN.md)，新的实测结论应单独记录，不改写历史证据。
 
@@ -44,16 +44,16 @@
 
 这些链接证明研究时的源码状态。若后续更新依赖，另存新 SHA 和变更说明，不把浮动 `main` 作为复现实验输入。
 
-## 4. 建议目录和技术选型（尚未实现）
+## 4. 当前目录和技术选型
 
-| 拟议路径 | 职责 |
+| 路径 | 当前状态与职责 |
 | --- | --- |
-| `tools/device/collect.py` | Python 3 只读采集、超时、脱敏、结构化报告 |
-| `tools/device/collect.sh` | 仅用于 Python 不可用时的有限文本采集；不是安装器 |
-| `tools/device/schema/device-profile.schema.json` | 设备档案必填、可空和证据来源约束 |
-| `tools/device/fixtures/` | 无个人信息的缺失字段、权限不足、版本变化样例 |
-| `docs/devices/odin3-armada.md` | 经审阅的环境说明、兼容栈选择与未知项 |
-| `artifacts/M0/<run-id>/` | 本地原始日志、解析后 JSON、命令退出码；默认不提交大文件 |
+| `tools/device/collect.py` | 已实现：Python 3 只读采集、超时、结构化私有报告 |
+| `tools/device/profile_tools.py` | 已实现：离线 schema 校验与公开脱敏 |
+| `tools/device/schema/device-profile.schema.json` | 已实现：设备档案必填、可空和证据来源约束 |
+| `tools/device/fixtures/` | 已实现首批匿名综合 fixture；后续按真实缺口扩展 |
+| `docs/devices/odin3-armada.md` | 待 M0-C/M0-D：经审阅的真实环境说明、兼容栈选择与未知项 |
+| `artifacts/M0/<run-id>/` | 待设备运行时使用：本地原始日志、解析后 JSON、命令退出码；默认不提交大文件 |
 
 优先 Python 标准库，读取 sysfs/procfs 和显式文件；运行外部命令用参数数组、超时和长度限制，不拼接 shell。`sysfs` 路径可因内核变化而缺失，不能把路径缺失硬编码成“不支持”。
 
@@ -150,11 +150,12 @@ if command -v vulkaninfo >/dev/null 2>&1; then vulkaninfo --summary; fi
 
 `vulkaninfo` 会初始化图形驱动进行能力查询，应单独记录失败，不能因失败中断其它采集。设备节点通配符无匹配不等于永久不存在 NPU。
 
-未来拟议命令如下；**当前仓库未实现，不能直接作为安装/验证步骤运行**：
+当前仓库已实现的入口如下。它们只创建建档产物，不安装或修改系统；在 Odin 3 上运行前仍需先阅读 `tools/device/README.md`，并使用一个不存在的新输出目录：
 
 ```text
-python3 tools/device/collect.py --read-only --output <new-report-directory>
-python3 tools/device/collect.py --redact <private-profile.json> --output <public-profile.json>
+python3 tools/device/collect.py --output <new-report-directory>
+python3 tools/device/profile_tools.py validate <new-report-directory>/device-profile.json
+python3 tools/device/profile_tools.py redact <new-report-directory>/device-profile.json --output <new-public-profile.json>
 ```
 
 ## 8. 验证矩阵与失败路径
