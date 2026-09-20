@@ -129,8 +129,17 @@ def _identity(value: Any, path: str, *, fixed: bool = False) -> dict[str, str]:
     return dict(result)
 
 
+def _identity_key(identity: dict[str, str]) -> tuple[str, ...]:
+    return tuple(identity[field] for field in _IDENTITY_FIELDS)
+
+
 class LifecycleContext:
-    """One context with at most one submitted request awaiting completion."""
+    """Replay one context's execution, consumption, history, and reset lifecycle.
+
+    The request's integer history snapshot stands in for candidate next-history
+    and is deliberately separate from the nullable CPU output.  This only tests
+    state transitions; it does not model real FSR4 recurrent resources.
+    """
 
     def __init__(self, manifest: Any, identity: Any):
         try:
@@ -146,7 +155,16 @@ class LifecycleContext:
             )
         self._active_identity: dict[str, str] | None = None
         self._active_output: list[list[int | None]] | None = None
+        self._active_candidate_history: list[list[int]] | None = None
+        self._active_state: str | None = None
+        self._isolated: dict[tuple[str, ...], dict[str, Any]] = {}
+        self._committed_history: list[list[int | None]] | None = None
+        self._history_invalid = False
+        self._last_submitted_frame: int | None = None
         self._last_completed_frame: int | None = None
+        self._last_committed_frame: int | None = None
+        self._consumed: dict[tuple[str, ...], bool] = {}
+        self._reset_results: dict[str, tuple[str, str]] = {}
         self._lock = threading.RLock()
 
     @property
@@ -155,25 +173,76 @@ class LifecycleContext:
             return None if self._active_identity is None else dict(self._active_identity)
 
     @property
+    def state(self) -> str:
+        with self._lock:
+            if self._active_state is not None:
+                return self._active_state
+            return "invalid" if self._history_invalid else "ready"
+
+    @property
+    def history_generation(self) -> str:
+        with self._lock:
+            return self._identity["history_generation"]
+
+    @property
+    def committed_history(self) -> list[list[int | None]] | None:
+        with self._lock:
+            return copy.deepcopy(self._committed_history)
+
+    @property
+    def isolated_resource_count(self) -> int:
+        with self._lock:
+            return len(self._isolated)
+
+    @property
     def last_completed_frame_id(self) -> str | None:
         with self._lock:
             if self._last_completed_frame is None:
                 return None
             return str(self._last_completed_frame)
 
+    @property
+    def last_committed_frame_id(self) -> str | None:
+        with self._lock:
+            if self._last_committed_frame is None:
+                return None
+            return str(self._last_committed_frame)
+
+    def _require_active_match(self, checked: dict[str, str], path: str) -> None:
+        if self._active_identity is None:
+            _fail(path, "there is no active request")
+        for field in _IDENTITY_FIELDS:
+            if checked[field] != self._active_identity[field]:
+                _fail(f"{path}.{field}", "does not match the active request identity")
+
+    def _invalidate_history(self) -> None:
+        self._committed_history = None
+        self._last_committed_frame = None
+        self._history_invalid = True
+
     def submit(self, request: Any, history: Any, motion_vectors: Any) -> None:
         checked = _identity(request, "request")
         with self._lock:
             if self._active_identity is not None:
                 _fail("request", "context already has an active request")
+            if self._history_invalid:
+                _fail("request", "history is invalid; reset is required")
             for field in _FIXED_ID_FIELDS:
                 if checked[field] != self._identity[field]:
                     _fail(f"request.{field}", "does not match the bound context identity")
             frame_number = int(checked["frame_id"])
-            if self._last_completed_frame is not None and frame_number <= self._last_completed_frame:
-                _fail("request.frame_id", "must be strictly greater than last completed frame")
+            if self._last_submitted_frame is not None and frame_number <= self._last_submitted_frame:
+                _fail("request.frame_id", "must be strictly greater than last submitted frame")
+            if self._committed_history is None:
+                if history is None:
+                    _fail("request.history", "an initialization history is required")
+                history_source = history
+            else:
+                if history is not None:
+                    _fail("request.history", "must be null after history has been committed")
+                history_source = self._committed_history
             try:
-                history_snapshot = copy.deepcopy(history)
+                history_snapshot = copy.deepcopy(history_source)
                 motion_snapshot = copy.deepcopy(motion_vectors)
             except RecursionError as exc:
                 raise LifecycleInvalid(
@@ -187,21 +256,154 @@ class LifecycleContext:
                 raise LifecycleInvalid(f"request payload: {exc}") from exc
             self._active_identity = checked
             self._active_output = output
+            self._active_candidate_history = history_snapshot
+            self._active_state = "executing"
+            self._last_submitted_frame = frame_number
 
-    def complete(self, completion: Any) -> list[list[int | None]]:
+    def complete(self, completion: Any) -> list[list[int | None]] | None:
         checked = _identity(completion, "completion")
         with self._lock:
-            if self._active_identity is None:
-                _fail("completion", "there is no active request")
-            for field in _IDENTITY_FIELDS:
-                if checked[field] != self._active_identity[field]:
-                    _fail(f"completion.{field}", "does not match the active request identity")
+            key = _identity_key(checked)
+            isolated = self._isolated.get(key)
+            if isolated is not None:
+                if isolated["state"] not in ("executing", "executing_timed_out"):
+                    _fail("completion", "isolated request already awaits result consumption")
+                del self._isolated[key]
+                completed = int(checked["frame_id"])
+                if self._last_completed_frame is None or completed > self._last_completed_frame:
+                    self._last_completed_frame = completed
+                return None
+
+            self._require_active_match(checked, "completion")
+            assert self._active_state is not None
+            if self._active_state not in ("executing", "executing_timed_out"):
+                _fail("completion", "active request has already completed")
             output = self._active_output
             assert output is not None
             self._last_completed_frame = int(checked["frame_id"])
+            if self._active_state == "executing_timed_out":
+                self._active_identity = None
+                self._active_output = None
+                self._active_candidate_history = None
+                self._active_state = None
+                return None
+            self._active_state = "pending_consumption"
+            return copy.deepcopy(output)
+
+    def timeout(self, request: Any) -> None:
+        """Record a caller timeout without claiming retained work has stopped."""
+
+        checked = _identity(request, "timeout")
+        with self._lock:
+            key = _identity_key(checked)
+            isolated = self._isolated.get(key)
+            if isolated is not None:
+                state = isolated["state"]
+                if state == "executing":
+                    isolated["state"] = "executing_timed_out"
+                elif state == "pending_consumption":
+                    isolated["state"] = "pending_consumption_timed_out"
+                return
+
+            self._require_active_match(checked, "timeout")
+            assert self._active_state is not None
+            if self._active_state == "executing":
+                self._active_state = "executing_timed_out"
+            elif self._active_state == "pending_consumption":
+                self._active_state = "pending_consumption_timed_out"
+            elif self._active_state not in (
+                "executing_timed_out",
+                "pending_consumption_timed_out",
+            ):
+                _fail("timeout", "active request cannot time out in its current state")
+            self._invalidate_history()
+
+    def result_consumed(self, notification: Any, success: Any) -> None:
+        """Acknowledge output use; only a timely success commits next-history."""
+
+        checked = _identity(notification, "result_consumed")
+        if type(success) is not bool:
+            _fail("result_consumed.success", "must be a boolean")
+        with self._lock:
+            key = _identity_key(checked)
+            previous = self._consumed.get(key)
+            if previous is not None:
+                if previous != success:
+                    _fail("result_consumed.success", "conflicts with the recorded notification")
+                return
+
+            isolated = self._isolated.get(key)
+            if isolated is not None:
+                if isolated["state"] not in (
+                    "pending_consumption",
+                    "pending_consumption_timed_out",
+                ):
+                    _fail("result_consumed", "isolated request has not completed")
+                del self._isolated[key]
+                self._consumed[key] = success
+                return
+
+            self._require_active_match(checked, "result_consumed")
+            assert self._active_state is not None
+            if self._active_state not in (
+                "pending_consumption",
+                "pending_consumption_timed_out",
+            ):
+                _fail("result_consumed", "active request has not completed")
+            timed_out = self._active_state == "pending_consumption_timed_out"
+            output = self._active_output
+            candidate_history = self._active_candidate_history
+            assert output is not None
+            assert candidate_history is not None
+            if success and not timed_out:
+                self._committed_history = copy.deepcopy(candidate_history)
+                self._last_committed_frame = int(checked["frame_id"])
+                self._history_invalid = False
+            else:
+                self._invalidate_history()
             self._active_identity = None
             self._active_output = None
-            return output
+            self._active_candidate_history = None
+            self._active_state = None
+            self._consumed[key] = success
+
+    def reset(self, request_id: Any, expected_generation: Any) -> str:
+        """Invalidate history, isolate retained work, and start a new generation."""
+
+        checked_request_id = _nonempty_id(request_id, "reset.request_id")
+        checked_expected = _decimal_id(expected_generation, "reset.history_generation")
+        with self._lock:
+            previous_reset = self._reset_results.get(checked_request_id)
+            if previous_reset is not None:
+                previous_expected, previous_result = previous_reset
+                if checked_expected != previous_expected:
+                    _fail("reset.request_id", "was already used with different parameters")
+                return previous_result
+            current = self._identity["history_generation"]
+            if checked_expected != current:
+                _fail("reset.history_generation", "does not match the current generation")
+            next_generation = str(int(current) + 1)
+            if len(next_generation) > MAX_DECIMAL_DIGITS:
+                _fail("reset.history_generation", "cannot increment beyond the digit limit")
+
+            if self._active_identity is not None:
+                key = _identity_key(self._active_identity)
+                self._isolated[key] = {
+                    "identity": dict(self._active_identity),
+                    "output": self._active_output,
+                    "candidate_history": self._active_candidate_history,
+                    "state": self._active_state,
+                }
+                self._active_identity = None
+                self._active_output = None
+                self._active_candidate_history = None
+                self._active_state = None
+            self._committed_history = None
+            self._last_committed_frame = None
+            self._history_invalid = False
+            self._identity["history_generation"] = next_generation
+            self._reset_results[checked_request_id] = (checked_expected, next_generation)
+            return next_generation
 
 
 def _validate_expected_grid(value: Any, actual: list[list[int | None]]) -> None:
@@ -243,9 +445,13 @@ def validate_scenario(manifest: Any, value: Any) -> list[list[int | None]]:
         raise AssertionError("new lifecycle context unexpectedly has active work")
     context.submit(scenario["request"], scenario["history"], scenario["motion_vectors"])
     output = context.complete(scenario["request"])
+    assert output is not None
     _validate_expected_grid(scenario["expected_output"], output)
     if output != scenario["expected_output"]:
         _fail("$.expected_output", f"CPU mismatch: expected {scenario['expected_output']}, computed {output}")
+    context.result_consumed(scenario["request"], True)
+    if context.committed_history != scenario["history"]:
+        raise AssertionError("successful result consumption did not commit candidate history")
     return output
 
 

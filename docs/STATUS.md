@@ -21,7 +21,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | H1 基线可复现 | 用仓库依赖在 Windows 运行现有 M0 unittest 和 fixture→validate→redact 最小链路；记录版本、准确命令、退出码与 skipped 原因。确保新检出无需私有目录。沿用已有工具，不重写框架 | 现有 M0 | complete |
 | H2 元数据校验 | 小型离线 manifest/tensor 校验器与合成 fixture；检查必需字段、shape/dtype/layout、容量上限及非法元数据；真实资产未知可记录，不能伪造哈希或生产可用状态。合法样例通过、畸形输入确定性拒绝 | H1 | complete |
 | H3 CPU 数值参考 | 小尺寸确定性数据，覆盖量化/反量化的舍入、饱和和误差，以及明确坐标/MV 方向的平移、重投影和 reset 样例；有独立手算/固定预期与声明容差。只验证选定算子，不称完整 FSR4 | H2 的数据约定 | complete |
-| H4 同帧生命周期回放 | 一个 Windows CPU harness 使用 H2 输入和 H3 参考算子；同 context 单请求在途，核对 session/context/frame/history/model 身份，拒绝过期输出；reset/失败不污染 history，超时保留在途资源，显式完成后才能回收；成功与错误路径有自动检查 | H2 + H3 | in_progress |
+| H4 同帧生命周期回放 | 一个 Windows CPU harness 使用 H2 输入和 H3 参考算子；同 context 单请求在途，核对 session/context/frame/history/model 身份，拒绝过期输出；reset/失败不污染 history，超时保留在途资源，显式完成后才能回收；成功与错误路径有自动检查 | H2 + H3 | complete |
 
 边界：不在本阶段加入网络 daemon、完整 NGX DLL、真实 GPU/NPU 执行、Steam 安装器、Decky UI 或游戏兼容矩阵实现。允许为现有合同写最小 CPU 验证，不提前冻结未经设备证明的最终 ABI。实际 FSR4 权重 CPU 重放需要合法资产，作为后续可选实验，不是 H1–H4 的必需项。
 
@@ -29,8 +29,9 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 ## 当前接续点
 
-- 下一批：继续 H4；增加 timeout/pending consumption、显式 `result_consumed` 后的 history 提交，以及 reset/new generation 的资源隔离，不扩到网络 daemon 或设备执行。
-- 当前最新记录：[统一 Windows 测试入口与 README 同步](validation/host/2026-09-20-host-test-entry-readme-sync.md)。
+- H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
+- 下一步：设备条件可用后另开阶段处理后置验证；当前 Windows 全仓 host suite 已在 Python 3.12.14 `.venv` 与固定依赖 `jsonschema==4.26.0` 下通过。
+- 当前最新记录：[H4 消费、超时与换代隔离](validation/host/2026-09-20-h4-consumption-timeout-reset.md)。
 - 设备、SDK、模型、首个游戏：当前均不要求提供。不要重复请求连接掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 

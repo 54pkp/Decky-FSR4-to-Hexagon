@@ -38,6 +38,9 @@ class LifecycleTests(unittest.TestCase):
             self.scenario["motion_vectors"],
         )
 
+    def submit_with_committed_history(self, context, request):
+        context.submit(request, None, self.scenario["motion_vectors"])
+
     def assert_invalid(self, call, expected_path):
         with self.assertRaises(lifecycle.LifecycleInvalid) as caught:
             call()
@@ -68,7 +71,8 @@ class LifecycleTests(unittest.TestCase):
         reproject.assert_called_once_with(
             self.scenario["history"], self.scenario["motion_vectors"]
         )
-        self.assertIs(sentinel, result)
+        self.assertEqual(sentinel, result)
+        self.assertIsNot(sentinel, result)
 
     def test_h2_manifest_id_is_bound_to_scenario_and_context(self):
         bad_root = copy.deepcopy(self.scenario)
@@ -113,6 +117,7 @@ class LifecycleTests(unittest.TestCase):
                     self.scenario["expected_output"],
                     context.complete(self.scenario["request"]),
                 )
+                context.result_consumed(self.scenario["request"], True)
 
     def test_second_submit_is_rejected_without_replacing_active_request(self):
         context = self.new_context()
@@ -167,6 +172,7 @@ class LifecycleTests(unittest.TestCase):
         context = self.new_context()
         self.submit(context)
         context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], True)
         self.assertEqual("1", context.last_completed_frame_id)
         self.assert_invalid(
             lambda: self.submit(context, self.scenario["request"]), "request.frame_id"
@@ -181,7 +187,7 @@ class LifecycleTests(unittest.TestCase):
 
         next_request = copy.deepcopy(self.scenario["request"])
         next_request["frame_id"] = "2"
-        self.submit(context, next_request)
+        self.submit_with_committed_history(context, next_request)
         active = context.active_identity
         self.assert_invalid(
             lambda: context.complete(self.scenario["request"]), "completion.frame_id"
@@ -193,12 +199,196 @@ class LifecycleTests(unittest.TestCase):
         context = self.new_context()
         self.submit(context)
         context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], True)
         next_request = copy.deepcopy(self.scenario["request"])
         next_request["frame_id"] = "2"
-        self.submit(context, next_request)
+        self.submit_with_committed_history(context, next_request)
         self.assertEqual(next_request, context.active_identity)
         self.assertEqual(self.scenario["expected_output"], context.complete(next_request))
         self.assertEqual("2", context.last_completed_frame_id)
+
+    def test_completion_requires_consumption_before_history_commit_or_next_submit(self):
+        context = self.new_context()
+        self.submit(context)
+        output = context.complete(self.scenario["request"])
+        self.assertEqual("pending_consumption", context.state)
+        self.assertIsNone(context.committed_history)
+        self.assertIsNone(context.last_committed_frame_id)
+
+        next_request = copy.deepcopy(self.scenario["request"])
+        next_request["frame_id"] = "2"
+        self.assert_invalid(lambda: self.submit(context, next_request), "active request")
+
+        output[0][0] = 999
+        context.result_consumed(self.scenario["request"], True)
+        self.assertEqual("ready", context.state)
+        self.assertEqual(self.scenario["history"], context.committed_history)
+        self.assertNotEqual(output, context.committed_history)
+        self.assertEqual("1", context.last_committed_frame_id)
+        external_history = context.committed_history
+        external_history[0][0] = 999
+        self.assertEqual(self.scenario["history"], context.committed_history)
+        self.submit_with_committed_history(context, next_request)
+
+    def test_result_consumed_mismatch_preserves_pending_and_duplicate_is_idempotent(self):
+        replacements = {
+            "service_instance_id": "service-wrong",
+            "session_id": "session-wrong",
+            "context_id": "context-wrong",
+            "frame_id": "2",
+            "history_generation": "1",
+            "model_manifest_id": "synthetic-wrong",
+        }
+        for field, replacement in replacements.items():
+            with self.subTest(field=field):
+                context = self.new_context()
+                self.submit(context)
+                context.complete(self.scenario["request"])
+                mismatch = copy.deepcopy(self.scenario["request"])
+                mismatch[field] = replacement
+                self.assert_invalid(
+                    lambda: context.result_consumed(mismatch, True),
+                    f"result_consumed.{field}",
+                )
+                self.assertEqual("pending_consumption", context.state)
+                self.assertIsNone(context.committed_history)
+
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], True)
+        committed = context.committed_history
+        context.result_consumed(self.scenario["request"], True)
+        self.assertEqual(committed, context.committed_history)
+        self.assert_invalid(
+            lambda: context.result_consumed(self.scenario["request"], False),
+            "result_consumed.success",
+        )
+
+    def test_execution_timeout_retains_resources_until_matching_completion(self):
+        context = self.new_context()
+        self.submit(context)
+        context.timeout(self.scenario["request"])
+        self.assertEqual("executing_timed_out", context.state)
+        self.assertEqual(self.scenario["request"], context.active_identity)
+        self.assertIsNone(context.committed_history)
+
+        next_request = copy.deepcopy(self.scenario["request"])
+        next_request["frame_id"] = "2"
+        self.assert_invalid(lambda: self.submit(context, next_request), "active request")
+        mismatch = copy.deepcopy(self.scenario["request"])
+        mismatch["frame_id"] = "9"
+        self.assert_invalid(lambda: context.complete(mismatch), "completion.frame_id")
+        self.assertEqual(self.scenario["request"], context.active_identity)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual("invalid", context.state)
+        self.assertIsNone(context.active_identity)
+        self.assert_invalid(lambda: self.submit(context, next_request), "reset is required")
+
+    def test_pending_consumption_timeout_never_commits_candidate_history(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.timeout(self.scenario["request"])
+        self.assertEqual("pending_consumption_timed_out", context.state)
+        self.assertEqual(self.scenario["request"], context.active_identity)
+
+        context.result_consumed(self.scenario["request"], True)
+        self.assertEqual("invalid", context.state)
+        self.assertIsNone(context.committed_history)
+        self.assertIsNone(context.last_committed_frame_id)
+
+    def test_failed_consumption_invalidates_previously_committed_history(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], True)
+        self.assertIsNotNone(context.committed_history)
+
+        next_request = copy.deepcopy(self.scenario["request"])
+        next_request["frame_id"] = "2"
+        self.submit_with_committed_history(context, next_request)
+        context.complete(next_request)
+        context.result_consumed(next_request, False)
+        self.assertEqual("invalid", context.state)
+        self.assertIsNone(context.committed_history)
+        self.assertIsNone(context.last_committed_frame_id)
+
+    def test_reset_is_idempotent_advances_generation_and_keeps_frame_monotonic(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], True)
+
+        self.assertEqual("1", context.reset("reset-1", "0"))
+        self.assertEqual("1", context.reset("reset-1", "0"))
+        self.assertEqual("1", context.history_generation)
+        self.assertEqual("ready", context.state)
+        self.assertIsNone(context.committed_history)
+
+        old_generation = copy.deepcopy(self.scenario["request"])
+        old_generation["frame_id"] = "2"
+        self.assert_invalid(
+            lambda: self.submit(context, old_generation), "request.history_generation"
+        )
+        reused_frame = copy.deepcopy(self.scenario["request"])
+        reused_frame["history_generation"] = "1"
+        self.assert_invalid(lambda: self.submit(context, reused_frame), "request.frame_id")
+        next_request = copy.deepcopy(reused_frame)
+        next_request["frame_id"] = "2"
+        self.submit(context, next_request)
+
+        self.assertEqual("2", context.reset("reset-2", "1"))
+        self.assertEqual("1", context.reset("reset-1", "0"))
+        self.assertEqual("2", context.history_generation)
+
+    def test_reset_generation_overflow_is_atomic(self):
+        identity = copy.deepcopy(self.scenario["context"])
+        identity["history_generation"] = "9" * lifecycle.MAX_DECIMAL_DIGITS
+        context = lifecycle.LifecycleContext(self.manifest, identity)
+        self.assert_invalid(
+            lambda: context.reset("reset-overflow", identity["history_generation"]),
+            "reset.history_generation",
+        )
+        self.assertEqual(identity["history_generation"], context.history_generation)
+        self.assertEqual("ready", context.state)
+
+    def test_reset_isolates_old_generation_resources_from_new_history(self):
+        context = self.new_context()
+        self.submit(context)
+        self.assertEqual("1", context.reset("reset-running", "0"))
+        self.assertEqual(1, context.isolated_resource_count)
+        self.assertIsNone(context.active_identity)
+
+        new_request = copy.deepcopy(self.scenario["request"])
+        new_request["frame_id"] = "2"
+        new_request["history_generation"] = "1"
+        new_history = [[9, 8, 7], [6, 5, 4], [3, 2, 1]]
+        context.submit(new_request, new_history, self.scenario["motion_vectors"])
+        new_output = context.complete(new_request)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual(0, context.isolated_resource_count)
+        self.assertEqual("pending_consumption", context.state)
+        self.assertEqual(new_request, context.active_identity)
+        self.assertIsNone(context.committed_history)
+
+        context.result_consumed(new_request, True)
+        self.assertEqual(new_history, context.committed_history)
+        self.assertNotEqual(new_output, context.committed_history)
+
+    def test_reset_isolates_pending_old_result_so_late_success_cannot_commit(self):
+        context = self.new_context()
+        self.submit(context)
+        old_output = context.complete(self.scenario["request"])
+        self.assertEqual("1", context.reset("reset-pending", "0"))
+        self.assertEqual(1, context.isolated_resource_count)
+
+        context.result_consumed(self.scenario["request"], True)
+        self.assertEqual(0, context.isolated_resource_count)
+        self.assertIsNone(context.committed_history)
+        self.assertIsNotNone(old_output)
 
     def test_submit_rejects_each_fixed_identity_mismatch(self):
         replacements = {
