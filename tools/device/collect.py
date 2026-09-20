@@ -32,6 +32,13 @@ MAX_COMMAND_BYTES = 1024 * 1024
 MAX_DIAGNOSTIC_CHARS = 4096
 MAX_REMOTE_PROCS = 128
 MAX_DEVICE_NODES = 256
+WINDOWS_COMMAND_WRAPPER = (
+    "import json,subprocess,sys; "
+    "gate=sys.stdin.buffer.read(1); "
+    "args=json.loads(sys.argv[1]); "
+    "r=subprocess.run(args,stdin=subprocess.DEVNULL,check=False) if gate==b'1' else None; "
+    "sys.exit(r.returncode if r is not None else 125)"
+)
 
 
 class InputError(Exception):
@@ -120,14 +127,20 @@ class ProductionRunner:
         if not args or shutil.which(args[0]) is None:
             return RunnerResult(args, False, None, b"", b"", False, False, False)
         process_options: dict[str, Any] = {}
+        launch_args = args
+        child_stdin: Any = subprocess.DEVNULL
         if os.name == "posix":
             process_options["start_new_session"] = True
         elif os.name == "nt":
             process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # The wrapper cannot spawn the requested command until the parent
+            # attaches it to a kill-on-close Job Object and writes one byte.
+            launch_args = [sys.executable, "-c", WINDOWS_COMMAND_WRAPPER, json.dumps(args)]
+            child_stdin = subprocess.PIPE
         try:
             process = subprocess.Popen(  # noqa: S603 - fixed argv, deliberately no shell
-                args,
-                stdin=subprocess.DEVNULL,
+                launch_args,
+                stdin=child_stdin,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
@@ -141,6 +154,22 @@ class ProductionRunner:
             return RunnerResult(args, True, None, b"", str(exc).encode(), False, False, False)
 
         windows_job = _WindowsJob.attach(process) if os.name == "nt" else None
+        if os.name == "nt":
+            assert process.stdin is not None
+            if windows_job is None:
+                process.kill()
+                process.wait()
+                process.stdin.close()
+                assert process.stdout is not None and process.stderr is not None
+                process.stdout.close()
+                process.stderr.close()
+                return RunnerResult(
+                    args, True, None, b"",
+                    b"unable to establish Windows process-tree ownership",
+                    False, False, False,
+                )
+            process.stdin.write(b"1")
+            process.stdin.close()
         output: dict[str, BoundedBytes] = {}
 
         def drain(name: str, stream: Any) -> None:

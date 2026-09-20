@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -135,6 +136,33 @@ class CollectorSafetyTests(unittest.TestCase):
             self.assertFalse(
                 any(thread.name.startswith("device-collector-") for thread in threading.enumerate())
             )
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
+    def test_command_waits_for_delayed_job_attachment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "started.txt"
+            command = f"from pathlib import Path; Path({str(marker)!r}).write_text('started')"
+            original_attach = device_collect._WindowsJob.attach
+
+            def delayed_attach(process):
+                time.sleep(0.5)
+                self.assertFalse(marker.exists())
+                return original_attach(process)
+
+            with mock.patch.object(device_collect._WindowsJob, "attach", side_effect=delayed_attach):
+                result = device_collect.ProductionRunner.run([sys.executable, "-c", command], 2.0)
+            self.assertEqual(0, result.exit_code)
+            self.assertTrue(marker.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
+    def test_failed_job_attachment_does_not_execute_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "must-not-exist.txt"
+            command = f"from pathlib import Path; Path({str(marker)!r}).write_text('bad')"
+            with mock.patch.object(device_collect._WindowsJob, "attach", return_value=None):
+                result = device_collect.ProductionRunner.run([sys.executable, "-c", command], 2.0)
+            self.assertIsNone(result.exit_code)
+            self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":

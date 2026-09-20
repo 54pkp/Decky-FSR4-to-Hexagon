@@ -197,6 +197,7 @@ class ProfileToolsTests(unittest.TestCase):
             for sentinel in (
                 "fixture-user-sentinel",
                 "fixture-host-sentinel",
+                "fixture-host-sentinel",
                 "/home/fixture-user-sentinel/PrivateNotes",
                 "SERIAL-FIXTURE-998877",
             ):
@@ -262,7 +263,11 @@ class ProfileToolsTests(unittest.TestCase):
                 "serial_number": "SERIAL-FIXTURE-112233",
             }
             json_path = private_path.parent / "evidence" / "private-structured.json"
-            json_payload = b'{"serial_number":"SERIAL-FIXTURE-JSON-445566"}\n'
+            json_payload = (
+                b'{"serial_number":"SERIAL-FIXTURE-JSON-445566",'
+                b'"status":"fixture-user-sentinel",'
+                b'"kind":"fixture-host-sentinel"}\n'
+            )
             json_path.write_bytes(json_payload)
             private["evidence"].append({
                 "evidence_id": "ev-private-json",
@@ -291,6 +296,15 @@ class ProfileToolsTests(unittest.TestCase):
             ):
                 self.assertNotIn(sentinel.lower(), rendered.lower())
             self.assertEqual("[REDACTED:serial]", public["os"]["kernel"]["value"]["serial_number"])
+            public_json_item = next(item for item in public["evidence"] if item["path"].endswith(".json"))
+            public_json = json.loads(
+                output.parent.joinpath(*PurePosixPath(public_json_item["path"]).parts).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("[REDACTED:user]", public_json["status"])
+            self.assertEqual("[REDACTED:host]", public_json["kind"])
+            self.assertEqual("[REDACTED:serial]", public_json["serial_number"])
             self.assertNotIn(sensitive_name, public["evidence"][0]["path"])
             profile_tools.validate_profile(public, output)
 

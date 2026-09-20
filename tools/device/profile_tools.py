@@ -271,22 +271,29 @@ def _redact_tree(
     *,
     key: str | None = None,
     path: tuple[Any, ...] = (),
+    preserve_protocol: bool = True,
 ) -> Any:
     if isinstance(node, str):
-        if key in REDACTION_PRESERVED_KEYS or path == ("collection", "tool", "name"):
+        if preserve_protocol and (
+            key in REDACTION_PRESERVED_KEYS or path == ("collection", "tool", "name")
+        ):
             return node
         if key is not None and SENSITIVE_FIELD.fullmatch(key):
             return PLACEHOLDER["serial"]
         return _redact_text(node, tokens, path_patterns)
     if isinstance(node, list):
         return [
-            _redact_tree(item, tokens, path_patterns, key=key, path=path + (index,))
+            _redact_tree(
+                item, tokens, path_patterns, key=key, path=path + (index,),
+                preserve_protocol=preserve_protocol,
+            )
             for index, item in enumerate(node)
         ]
     if isinstance(node, dict):
         return {
             child_key: _redact_tree(
-                value, tokens, path_patterns, key=child_key, path=path + (child_key,)
+                value, tokens, path_patterns, key=child_key, path=path + (child_key,),
+                preserve_protocol=preserve_protocol,
             )
             for child_key, value in node.items()
         }
@@ -313,7 +320,9 @@ def _redact_evidence_payload(
         except json.JSONDecodeError:
             pass
         else:
-            redacted = _redact_tree(document, tokens, path_patterns)
+            redacted = _redact_tree(
+                document, tokens, path_patterns, preserve_protocol=False
+            )
             return _profile_bytes(redacted) if isinstance(redacted, dict) else (
                 json.dumps(redacted, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
             ).encode("utf-8")
