@@ -23,14 +23,14 @@ These tools establish device facts and test file-handling boundaries. They do no
 Python 3.10+ is required. From the repository root, run:
 
 ```powershell
-# Verify that python is Python 3.10+; create once, preserving existing environments
-python --version
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r tools/device/requirements-host.txt
+# Select the full path of a Python 3.10+ executable; no py launcher or guessed path
+$python = 'C:\Path With Spaces\Python312\python.exe'
+& $python tools/host/environment.py check --python $python
+& $python tools/host/environment.py init --python $python --venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-If the system default is Python 3.9, use an installed Python 3.10+ executable's full path to create the environment; `jsonschema==4.26.0` does not support 3.9. Use the interpreter in an existing working `.venv` directly. An automated preflight entry point is planned in P1 and is not implemented yet.
+The entry point reports AMD64/ARM64 architecture, verifies `pip`, installs the baseline requirements, and refuses to overwrite any existing target. For an existing `.venv`, do not run `init` again; inspect it without modification with `& .\.venv\Scripts\python.exe tools/host/environment.py check --python .\.venv\Scripts\python.exe`. See [`tools/host/README.md`](tools/host/README.md) for details.
 
 This unified device-free check validates only the Python tools, synthetic CPU references, and fixture behavior. It is not Odin 3, CDSP/FastRPC, HTP, complete FSR4, or game validation. Live device collection is Linux-only; see [`tools/device/README.md`](tools/device/README.md).
 

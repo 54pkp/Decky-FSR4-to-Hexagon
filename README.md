@@ -23,14 +23,14 @@
 需要 Python 3.10+。在仓库根目录运行：
 
 ```powershell
-# 确认 python 指向 Python 3.10+；首次创建，不覆盖已有环境
-python --version
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r tools/device/requirements-host.txt
+# 显式选择 Python 3.10+ 的完整路径；入口不会调用 py 或猜测安装位置
+$python = 'C:\Path With Spaces\Python312\python.exe'
+& $python tools/host/environment.py check --python $python
+& $python tools/host/environment.py init --python $python --venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-若系统默认 Python 是 3.9，创建环境时改用已安装的 Python 3.10+ 完整路径；`jsonschema==4.26.0` 不支持 3.9。已有可用 `.venv` 时直接使用其解释器。P1 将提供自动预检入口，当前尚未实现。
+入口会报告 AMD64/ARM64 架构、检查 `pip`、安装基线 requirements，并拒绝覆盖任何已存在的目标路径。若已有 `.venv`，不要再次运行 `init`；可用 `& .\.venv\Scripts\python.exe tools/host/environment.py check --python .\.venv\Scripts\python.exe` 做非修改性检查。详细说明见 [`tools/host/README.md`](tools/host/README.md)。
 
 该统一入口无需设备，只验证 Python 工具、合成 CPU 参考和 fixture 行为；它不是 Odin 3、CDSP/FastRPC、HTP、完整 FSR4 或游戏验证。实时设备采集仅支持 Linux，使用方法见 [`tools/device/README.md`](tools/device/README.md)。
 
