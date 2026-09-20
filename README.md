@@ -2,7 +2,6 @@
 
 面向 Linux ARM 掌机的探索性项目：研究通过 Decky 风格的界面与后台服务，配置、验证和使用 FSR4 Hexagon/CDSP 路线，并评估与 FEX、Proton、fsr4-hexagon 和 hexscale 的组合方式。
 
-仓库目录名：`Decky-FSR4-to-Hexagon`。
 
 ## 当前状态
 
