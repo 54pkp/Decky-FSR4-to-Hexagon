@@ -98,6 +98,17 @@ class ProfileToolsTests(unittest.TestCase):
             profile_tools.validate_profile(profile, GOLDEN, verify_files=False)
         self.assertIn("$.identity.host_name.source.evidence_ids[0]", str(caught.exception))
 
+    def test_observation_like_value_is_not_a_semantic_observation(self):
+        profile = copy.deepcopy(self.profile)
+        profile["os"]["kernel"]["value"] = {
+            "value": "arbitrary payload",
+            "source": {"evidence_ids": ["not-a-profile-evidence-id"]},
+            "observed_at": "not-a-protocol-timestamp",
+            "status": "not-a-protocol-status",
+            "failure": None,
+        }
+        profile_tools.validate_profile(profile, GOLDEN, verify_files=False)
+
     def test_physical_evidence_hash_and_size_are_verified(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -242,6 +253,140 @@ class ProfileToolsTests(unittest.TestCase):
                 }
                 self.assertIn("user_input", kinds)
                 self.assertEqual("tools/device/collect.py", public["collection"]["tool"]["name"])
+
+    def test_redaction_only_preserves_protocol_values_at_schema_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            private = json.loads(private_path.read_text(encoding="utf-8"))
+            private["os"]["kernel"]["value"] = {
+                "status": "fixture-user-sentinel",
+                "kind": "fixture-host-sentinel",
+                "commit": "/home/fixture-user-sentinel/PrivateNotes/commit.txt",
+                "value": "arbitrary payload",
+                "source": {
+                    "evidence_ids": ["ev-private-text", "fixture-user-sentinel"]
+                },
+                "observed_at": "fixture-host-sentinel",
+                "failure": None,
+                "serial_number": 987654321,
+                "serial": ["must", "not", "leak"],
+                "machine_id": {"secret": True},
+                "device_id": None,
+            }
+            private["game_candidates"].append({
+                "candidate_id": "fixture-user-sentinel-private-candidate",
+                "name": copy.deepcopy(private["os"]["libc"]),
+                "executable": copy.deepcopy(private["os"]["libc"]),
+            })
+            evidence_path = private_path.parent / private["evidence"][0]["path"]
+            evidence_path.write_bytes(
+                evidence_path.read_bytes()
+                + b"serial number=SERIAL-FIXTURE-SPACE-112233\n"
+                + b"serial_number=SERIAL-FIXTURE-UNDER-223344\n"
+                + b"serial-number=SERIAL-FIXTURE-DASH-334455\n"
+                + b"machine id=MACHINE-FIXTURE-445566\n"
+                + b"machine_id=MACHINE-FIXTURE-556677\n"
+                + b"device-id=DEVICE-FIXTURE-667788\n"
+            )
+            evidence_payload = evidence_path.read_bytes()
+            private["evidence"][0].update(
+                sha256=hashlib.sha256(evidence_payload).hexdigest(),
+                byte_count=len(evidence_payload),
+            )
+            private_path.write_text(json.dumps(private), encoding="utf-8")
+
+            output = root / "public" / "public.json"
+            profile_tools.redact_profile(private_path, output)
+            public = json.loads(output.read_text(encoding="utf-8"))
+            value = public["os"]["kernel"]["value"]
+            self.assertEqual("[REDACTED:user]", value["status"])
+            self.assertEqual("[REDACTED:host]", value["kind"])
+            self.assertEqual("[REDACTED:path]", value["commit"])
+            self.assertEqual(
+                ["ev-private-text", "[REDACTED:user]"],
+                value["source"]["evidence_ids"],
+            )
+            self.assertEqual("[REDACTED:host]", value["observed_at"])
+            for key in ("serial_number", "serial", "machine_id", "device_id"):
+                self.assertEqual("[REDACTED:serial]", value[key])
+
+            self.assertEqual("draft-0", public["schema_version"])
+            self.assertEqual("public", public["profile_kind"])
+            self.assertEqual("fixture", public["collection"]["method"])
+            self.assertEqual(
+                private["collection"]["tool"]["commit"],
+                public["collection"]["tool"]["commit"],
+            )
+            self.assertEqual("success", public["os"]["kernel"]["status"])
+            self.assertEqual(
+                private["os"]["kernel"]["source"]["kind"],
+                public["os"]["kernel"]["source"]["kind"],
+            )
+            self.assertEqual(
+                "public-candidate-0001", public["game_candidates"][0]["candidate_id"]
+            )
+            self.assertNotIn("fixture-user-sentinel-private-candidate", output.read_text(encoding="utf-8"))
+
+            published_text = output.parent.joinpath(
+                *PurePosixPath(public["evidence"][0]["path"]).parts
+            ).read_text(encoding="utf-8")
+            for secret in (
+                "SERIAL-FIXTURE-SPACE-112233",
+                "SERIAL-FIXTURE-UNDER-223344",
+                "SERIAL-FIXTURE-DASH-334455",
+                "MACHINE-FIXTURE-445566",
+                "MACHINE-FIXTURE-556677",
+                "DEVICE-FIXTURE-667788",
+            ):
+                self.assertNotIn(secret, published_text)
+            for label in (
+                "serial number",
+                "serial_number",
+                "serial-number",
+                "machine id",
+                "machine_id",
+                "device-id",
+            ):
+                self.assertIn(f"{label}=[REDACTED:serial]", published_text)
+            profile_tools.validate_profile(public, output)
+
+    def test_sensitive_field_spellings_redact_every_json_type(self):
+        field_names = (
+            "serial",
+            "serialnumber",
+            "serial-number",
+            "serial_number",
+            "serial number",
+            "machineid",
+            "machine-id",
+            "machine_id",
+            "machine id",
+            "deviceid",
+            "device-id",
+            "device_id",
+            "device id",
+            "SeRiAlNuMbEr",
+        )
+        values = (
+            "private-string",
+            123456,
+            1.25,
+            True,
+            None,
+            ["private-list"],
+            {"private": "dict"},
+        )
+        tokens = {"user": set(), "host": set()}
+        for field_name in field_names:
+            for value in values:
+                with self.subTest(field_name=field_name, value=value):
+                    redacted = profile_tools._redact_tree(
+                        {field_name: value}, tokens, []
+                    )
+                    self.assertEqual(
+                        "[REDACTED:serial]", redacted[field_name]
+                    )
 
     def test_redaction_covers_spaced_paths_serial_fields_and_private_names(self):
         with tempfile.TemporaryDirectory() as directory:

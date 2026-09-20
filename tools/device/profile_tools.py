@@ -106,15 +106,24 @@ def _safe_relative_path(value: str) -> bool:
     return not path.is_absolute()
 
 
-def _iter_observations(node: Any, path: tuple[Any, ...] = ()):
-    if isinstance(node, dict):
-        if {"value", "source", "observed_at", "status", "failure"}.issubset(node):
-            yield path, node
-        for key, value in node.items():
-            yield from _iter_observations(value, path + (key,))
-    elif isinstance(node, list):
-        for index, value in enumerate(node):
-            yield from _iter_observations(value, path + (index,))
+def _iter_observations(profile: dict[str, Any]):
+    for section_name in (
+        "identity", "hardware", "os", "graphics", "npu", "runtime_stack"
+    ):
+        section = profile.get(section_name, {})
+        if isinstance(section, dict):
+            for observation_name, observation in section.items():
+                yield (section_name, observation_name), observation
+    candidates = profile.get("game_candidates", [])
+    if isinstance(candidates, list):
+        for index, candidate in enumerate(candidates):
+            if not isinstance(candidate, dict):
+                continue
+            for observation_name in ("name", "executable"):
+                if observation_name in candidate:
+                    yield (
+                        "game_candidates", index, observation_name
+                    ), candidate[observation_name]
 
 
 def _semantic_errors(profile: dict[str, Any], profile_path: Path, *, verify_files: bool) -> list[str]:
@@ -219,7 +228,7 @@ def _sensitive_tokens(profile: dict[str, Any]) -> tuple[dict[str, set[str]], lis
 
 
 SERIAL_PATTERNS = [
-    re.compile(r"(?i)(\b(?:serial(?:\s+number)?|machine[-_ ]?id|device[-_ ]?id)\s*[:=]\s*)[A-Za-z0-9._:-]{6,}"),
+    re.compile(r"(?i)(\b(?:serial(?:[-_ ]?number)?|machine[-_ ]?id|device[-_ ]?id)\s*[:=]\s*)[A-Za-z0-9._:-]{6,}"),
     re.compile(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"),
 ]
 
@@ -239,29 +248,52 @@ def _redact_text(text: str, tokens: dict[str, set[str]], path_patterns: list[re.
     return result
 
 
-REDACTION_PRESERVED_KEYS = {
-    "schema_version",
-    "evidence_id",
-    "evidence_ids",
-    "collection_item_id",
-    "sha256",
-    "commit",
-    "policy",
-    "status",
-    "category",
-    "kind",
-    "method",
-    "profile_kind",
-    "evidence_level",
-    "gate",
-    "visibility",
-    "observed_at",
-    "started_at",
-    "finished_at",
-    "candidate_id",
-}
+SENSITIVE_FIELD = re.compile(
+    r"(?i)^(?:serial(?:[-_ ]?number)?|machine[-_ ]?id|device[-_ ]?id)$"
+)
 
-SENSITIVE_FIELD = re.compile(r"(?i)^(?:serial(?:_number)?|machine_id|device_id)$")
+
+def _observation_root(path: tuple[Any, ...]) -> tuple[Any, ...] | None:
+    if len(path) >= 2 and path[0] in {
+        "identity", "hardware", "os", "graphics", "npu", "runtime_stack"
+    }:
+        return path[:2]
+    if len(path) >= 3 and path[0] == "game_candidates" and isinstance(path[1], int):
+        if path[2] in {"name", "executable"}:
+            return path[:3]
+    return None
+
+
+def _is_protocol_value(path: tuple[Any, ...]) -> bool:
+    if path in {
+        ("schema_version",),
+        ("profile_kind",),
+        ("evidence_level",),
+        ("gate",),
+        ("collection", "method"),
+        ("collection", "started_at"),
+        ("collection", "finished_at"),
+        ("collection", "tool", "name"),
+        ("collection", "tool", "commit"),
+    }:
+        return True
+    if len(path) == 3 and path[0] == "evidence" and isinstance(path[1], int):
+        return path[2] in {
+            "evidence_id", "collection_item_id", "sha256", "visibility"
+        }
+
+    observation = _observation_root(path)
+    if observation is None:
+        return False
+    relative = path[len(observation):]
+    return (
+        relative in {("observed_at",), ("status",), ("source", "kind"), ("failure", "category")}
+        or (
+            len(relative) == 3
+            and relative[:2] == ("source", "evidence_ids")
+            and isinstance(relative[2], int)
+        )
+    )
 
 
 def _redact_tree(
@@ -273,13 +305,11 @@ def _redact_tree(
     path: tuple[Any, ...] = (),
     preserve_protocol: bool = True,
 ) -> Any:
+    if key is not None and SENSITIVE_FIELD.fullmatch(key):
+        return PLACEHOLDER["serial"]
     if isinstance(node, str):
-        if preserve_protocol and (
-            key in REDACTION_PRESERVED_KEYS or path == ("collection", "tool", "name")
-        ):
+        if preserve_protocol and _is_protocol_value(path):
             return node
-        if key is not None and SENSITIVE_FIELD.fullmatch(key):
-            return PLACEHOLDER["serial"]
         return _redact_text(node, tokens, path_patterns)
     if isinstance(node, list):
         return [
@@ -352,6 +382,8 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
         "source_profile_sha256": private_digest,
         "redacted_at": _utc_now(),
     }
+    for index, candidate in enumerate(public["game_candidates"], start=1):
+        candidate["candidate_id"] = f"public-candidate-{index:04d}"
 
     published: list[tuple[dict[str, Any], bytes, Path]] = []
     public_id_by_private_id: dict[str, str] = {}
