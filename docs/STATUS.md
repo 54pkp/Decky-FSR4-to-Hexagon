@@ -37,7 +37,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | --- | --- | --- | --- |
 | P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | complete |
 | P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | complete |
-| P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；合法包、登录和版本条件 | not_started |
+| P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；固定官方 2.49.0.260730 包与独立 Python 3.12 环境 | complete |
 | P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；合成解析、ELF class/endian 与多记录 Verneed 已覆盖，真实清单仍需 P3 | in_progress |
 | P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | complete |
 | P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
@@ -52,8 +52,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 ## 当前接续点
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- 下一批：P3，取得并登记官方 QAIRT 包、独立环境和 Windows 工具能力；已确认 2.49 包可匿名 GET，但约 2.415 GB，尚未下载或安装。P3 完成后继续 P4 真实候选库清单和 P6 小图转换。
-- 当前最新记录：[P8 FSR pass-0 CPU 对照](validation/host/2026-09-21-p8-fsr-pass0-cpu-cross-check.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
+- 下一批：P4，用 P3 固定 SDK 完成真实候选库 ABI 清单；之后才进入 P6 小图转换。设备匹配与 HTP 执行仍后置。
+- 当前最新记录：[P3 QAIRT Windows 主机工具](validation/host/2026-09-21-p3-qairt-windows-host-tools.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
 - 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 
