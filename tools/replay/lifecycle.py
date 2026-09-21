@@ -26,6 +26,7 @@ MAX_SCENARIO_BYTES = 1 << 20
 MAX_JSON_INTEGER_DIGITS = 1_000
 MAX_ID_CHARACTERS = 128
 MAX_DECIMAL_DIGITS = 20
+MAX_RETAINED_RESOURCE_COUNT = 4
 
 _FIXED_ID_FIELDS = (
     "service_instance_id",
@@ -79,6 +80,10 @@ def _load_model_dependency(module_name: str) -> ModuleType:
 
 model_manifest = _load_model_dependency("manifest")
 spatial_reference = _load_model_dependency("spatial_reference")
+# Logical capacity is the number of grid cells held by candidate history plus
+# output.  One maximum-size H3 request is allowed, while old generations still
+# apply backpressure to later work in the same context.
+MAX_RETAINED_CAPACITY_CELLS = 2 * spatial_reference.MAX_PIXELS
 
 
 def _fail(path: str, message: str) -> None:
@@ -156,6 +161,7 @@ class LifecycleContext:
         self._active_identity: dict[str, str] | None = None
         self._active_output: list[list[int | None]] | None = None
         self._active_candidate_history: list[list[int]] | None = None
+        self._active_capacity_cells = 0
         self._active_state: str | None = None
         self._isolated: dict[tuple[str, ...], dict[str, Any]] = {}
         self._committed_history: list[list[int | None]] | None = None
@@ -195,6 +201,21 @@ class LifecycleContext:
             return len(self._isolated)
 
     @property
+    def isolated_resource_capacity_cells(self) -> int:
+        with self._lock:
+            return sum(item["capacity_cells"] for item in self._isolated.values())
+
+    @property
+    def retained_resource_count(self) -> int:
+        with self._lock:
+            return len(self._isolated) + (self._active_identity is not None)
+
+    @property
+    def retained_resource_capacity_cells(self) -> int:
+        with self._lock:
+            return self._isolated_capacity_cells() + self._active_capacity_cells
+
+    @property
     def last_completed_frame_id(self) -> str | None:
         with self._lock:
             if self._last_completed_frame is None:
@@ -220,6 +241,9 @@ class LifecycleContext:
         self._last_committed_frame = None
         self._history_invalid = True
 
+    def _isolated_capacity_cells(self) -> int:
+        return sum(item["capacity_cells"] for item in self._isolated.values())
+
     def submit(self, request: Any, history: Any, motion_vectors: Any) -> None:
         checked = _identity(request, "request")
         with self._lock:
@@ -241,6 +265,8 @@ class LifecycleContext:
                 if history is not None:
                     _fail("request.history", "must be null after history has been committed")
                 history_source = self._committed_history
+            if len(self._isolated) + 1 > MAX_RETAINED_RESOURCE_COUNT:
+                _fail("request", "retained resource count budget is exhausted")
             try:
                 history_snapshot = copy.deepcopy(history_source)
                 motion_snapshot = copy.deepcopy(motion_vectors)
@@ -254,9 +280,18 @@ class LifecycleContext:
                 )
             except spatial_reference.SpatialReferenceInvalid as exc:
                 raise LifecycleInvalid(f"request payload: {exc}") from exc
+            capacity_cells = sum(len(row) for row in history_snapshot) + sum(
+                len(row) for row in output
+            )
+            if (
+                self._isolated_capacity_cells() + capacity_cells
+                > MAX_RETAINED_CAPACITY_CELLS
+            ):
+                _fail("request", "retained resource capacity budget is exhausted")
             self._active_identity = checked
             self._active_output = output
             self._active_candidate_history = history_snapshot
+            self._active_capacity_cells = capacity_cells
             self._active_state = "executing"
             self._last_submitted_frame = frame_number
 
@@ -285,6 +320,7 @@ class LifecycleContext:
                 self._active_identity = None
                 self._active_output = None
                 self._active_candidate_history = None
+                self._active_capacity_cells = 0
                 self._active_state = None
                 return None
             self._active_state = "pending_consumption"
@@ -364,6 +400,7 @@ class LifecycleContext:
             self._active_identity = None
             self._active_output = None
             self._active_candidate_history = None
+            self._active_capacity_cells = 0
             self._active_state = None
             self._consumed[key] = success
 
@@ -393,10 +430,12 @@ class LifecycleContext:
                     "output": self._active_output,
                     "candidate_history": self._active_candidate_history,
                     "state": self._active_state,
+                    "capacity_cells": self._active_capacity_cells,
                 }
                 self._active_identity = None
                 self._active_output = None
                 self._active_candidate_history = None
+                self._active_capacity_cells = 0
                 self._active_state = None
             self._committed_history = None
             self._last_committed_frame = None

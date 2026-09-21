@@ -384,11 +384,90 @@ class LifecycleTests(unittest.TestCase):
         old_output = context.complete(self.scenario["request"])
         self.assertEqual("1", context.reset("reset-pending", "0"))
         self.assertEqual(1, context.isolated_resource_count)
+        self.assertGreater(context.isolated_resource_capacity_cells, 0)
 
         context.result_consumed(self.scenario["request"], True)
         self.assertEqual(0, context.isolated_resource_count)
+        self.assertEqual(0, context.isolated_resource_capacity_cells)
         self.assertIsNone(context.committed_history)
         self.assertIsNotNone(old_output)
+
+    def test_retained_resource_count_backpressures_without_evicting_old_work(self):
+        context = self.new_context()
+        retained = []
+        for generation in range(lifecycle.MAX_RETAINED_RESOURCE_COUNT):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            context.timeout(request)
+            self.assertEqual(
+                str(generation + 1),
+                context.reset(f"budget-reset-{generation}", str(generation)),
+            )
+            retained.append(request)
+
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_RESOURCE_COUNT, context.isolated_resource_count
+        )
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_RESOURCE_COUNT, context.retained_resource_count
+        )
+        generation_before = context.history_generation
+        history_before = context.committed_history
+        rejected = copy.deepcopy(self.scenario["request"])
+        rejected["frame_id"] = str(lifecycle.MAX_RETAINED_RESOURCE_COUNT + 1)
+        rejected["history_generation"] = generation_before
+        self.assert_invalid(lambda: self.submit(context, rejected), "resource count budget")
+        self.assertEqual(generation_before, context.history_generation)
+        self.assertEqual(history_before, context.committed_history)
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_RESOURCE_COUNT, context.isolated_resource_count
+        )
+
+        self.assertIsNone(context.complete(retained[0]))
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_RESOURCE_COUNT - 1,
+            context.isolated_resource_count,
+        )
+        self.submit(context, rejected)
+        self.assertEqual(rejected, context.active_identity)
+
+    def test_retained_capacity_backpressures_until_matching_completion(self):
+        context = self.new_context()
+        width = lifecycle.spatial_reference.MAX_WIDTH
+        height = lifecycle.spatial_reference.MAX_HEIGHT
+        history = [[0 for _ in range(width)] for _ in range(height)]
+        vectors = [[[0, 0] for _ in range(width)] for _ in range(height)]
+        first = copy.deepcopy(self.scenario["request"])
+        context.submit(first, history, vectors)
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_CAPACITY_CELLS,
+            context.retained_resource_capacity_cells,
+        )
+        context.timeout(first)
+        context.reset("capacity-reset", "0")
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_CAPACITY_CELLS,
+            context.isolated_resource_capacity_cells,
+        )
+
+        second = copy.deepcopy(first)
+        second["frame_id"] = "2"
+        second["history_generation"] = "1"
+        generation_before = context.history_generation
+        history_before = context.committed_history
+        self.assert_invalid(
+            lambda: context.submit(second, history, vectors), "resource capacity budget"
+        )
+        self.assertEqual(generation_before, context.history_generation)
+        self.assertEqual(history_before, context.committed_history)
+        self.assertEqual(1, context.isolated_resource_count)
+
+        self.assertIsNone(context.complete(first))
+        self.assertEqual(0, context.retained_resource_capacity_cells)
+        context.submit(second, history, vectors)
+        self.assertEqual(second, context.active_identity)
 
     def test_submit_rejects_each_fixed_identity_mismatch(self):
         replacements = {
