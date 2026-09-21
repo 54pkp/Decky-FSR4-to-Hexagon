@@ -2,9 +2,9 @@
 
 [项目首页 / Project home](../../README.md) · [最新路线 / Current roadmap](../roadmap/README.md) · [项目状态 / Status](../STATUS.md)
 
-此目录保存初次研究的完整中英文文档，供查阅技术依据、上游源码差异和最初设计背景。公开首页已另外编写，后续实现计划以节点指南和实际报告为准。
+此目录保存初次研究的完整中英文文档，供查阅技术依据、上游源码差异和最初设计背景。公开首页已另外编写；当前任务以[STATUS](../STATUS.md)及[无设备](../roadmap/HOST_PREPARATION.md)/[设备](../roadmap/DEVICE_EXECUTION.md)批次为准，节点指南只提供技术条件。H/P成果见[历史索引](../roadmap/COMPLETED_HOST_BATCHES.md)。
 
-This directory preserves the original bilingual research for technical reference. The public README is maintained separately; current implementation plans and evidence belong in the milestone guides and validation reports.
+This directory preserves the original bilingual research for technical reference. The public README is maintained separately. STATUS and the device-free/device batch plans define current work; milestone guides supply technical conditions, and dated reports preserve evidence.
 
 | 文档 / Document | 内容 / Contents |
 | --- | --- |

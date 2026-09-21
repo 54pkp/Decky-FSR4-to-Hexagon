@@ -1,116 +1,85 @@
-# 无设备阶段二：资产、工具链与离线参考
+# Windows 无设备活动计划
 
-评估日期：2026-09-20。用户已授权在 H1–H4 完成后规划新的 Windows / CPU 批次。本页定义 P1–P9；实际进度以 [STATUS](../STATUS.md) 为准。规划完成不代表依赖已下载或模型已运行。
+更新日期：2026-09-22。此页只列 **Windows、未连接 Odin 3** 时可独立验收的新工作；H1–H4、P1–P8 与 P9a–P9c 的完成范围已移至[已完成主机批次](COMPLETED_HOST_BATCHES.md)。当前状态和唯一进度表以 [STATUS](../STATUS.md) 为准，本轮规划记录见[文档路线刷新](../validation/host/2026-09-22-documentation-roadmap-refresh.md)。本页只定义 ID、依赖、验收和证据边界，不复制实时状态；所有叶子项在 STATUS 中默认 `not_started`，开始后才由协调者增加逐 ID 覆盖。
 
-## 1. 当前进展与剩余距离
+设备建档、Linux/Armada、真实 QNN/HTP 执行、游戏、画质、性能、功耗及 POSIX 对抗验证均属于[设备执行计划](DEVICE_EXECUTION.md)，不在本页验收。这里的 `complete` 最多证明指定 Windows 主机行为；不得外推为 FSR4 等价、目标 ABI 可用、HTP 成功或产品可用。
 
-基准为 `74d5ef28cfdf8f65150bfd7abfdc8d384a8efa93`。本轮 Windows `.venv`（Python 3.12.14 / AMD64、jsonschema 4.26.0）执行 `-m unittest discover -s tests -p "test_*.py"`：退出 0，104 项中 103 通过、1 skipped（普通文件 symlink 权限不可用）。
+## 执行规则
 
-| 已有能力 | 实际边界 | 接下来需要的能力 |
-| --- | --- | --- |
-| M0 采集器、schema、脱敏和 fixture | 主机测试已跑；Linux/设备行为仍未实测 | 接设备后采集真实镜像、ABI、FastRPC 信息 |
-| H2 tensor/manifest 校验 | `host-synthetic-manifest-v1` 强制 synthetic ID；没有真实资产来源、哈希或模型装载合同 | 独立的资产登记/核验工具，保留 H2 fixture 约束 |
-| H3 量化和整数重投影参考 | 小算子、独立预期；没有完整 FSR 网络、特征和重建 | 自有小图、CPU 推理参考，资产可用后再做 FSR 子图 |
-| H4 生命周期 harness | Python 同步计算加显式事件；candidate history 是输入快照，资源是 Python 对象 | 资源预算/背压和有实际变化的候选状态测试；真实 GPU/NPU 所有权仍待后续 |
-| Windows Python 环境 | 本机 `.venv` 可用，系统 Python 3.9 未修改；基础解释器来自 Codex 缓存 | 可由显式 Python 路径重建的通用入口，不能依赖个人缓存路径 |
+- 每次只选一个 ID（带 `a/b` 的子批也各算一次），满足依赖后实现、测试、记录，再由协调者更新 STATUS；不要把整条分支塞进一批。
+- 默认先清 R01–R05 的已复现缺陷，再做与其不冲突的 R 项。F、E 是可排期分支，不是本轮已启动工作，也不要求为了等待资产或设备而停止其它独立批次。
+- 真实外部资产必须绑定来源、版本、哈希和实际环境；旧收据、自洽收据或 ignored 目录名本身不是来源证明。SDK、模型及大产物继续留在忽略目录。
+- 测试中的 `skipped`、缺依赖和 `not_run` 分别汇总，不能算 pass。历史验证报告保持原样；新批次只写一份短记录。
+- Windows 离线 HTP prepare 只做可行性实验。工具存在、命令成功、prepare 可调用乃至生成文件，都不能代替目标设备加载和 HTP 执行；实验失败也应保留具体 SDK/算子限制，而不是承诺一定生成成功。
 
-本轮仅检查仓库约定的 `sdk/`、`sdks/`、`models/`、`weights/`、`research/`、`local/` 及 QNN/QAIRT/AISW SDK 环境变量：目录均不存在、变量未配置。这证明项目尚未登记/部署这些依赖，不能据此断言整台电脑没有 SDK。未全盘查找。
+## R：审计修复与可复现入口
 
-H 队列 complete 表示既定主机验收完成；项目仍处于移植前准备阶段。没有可用超分运行时、真实模型提取结果、NPU 服务或游戏接入，无法给出可信的整体完成百分比。
+R 分支关闭 2026-09-22 审计在无设备环境中可复现或可固化的欠账。前三项固定为最高优先级。P7现有五输入与提取器的固定哈希核验不重做；新项只补环境收据和P8消费端信任链。上游材料不是独立Git checkout，不能用向上命中的本仓库commit冒充来源。
 
-## 2. 要准备哪些材料
+| ID | 小批次与主机验收 | 依赖 | 不证明 |
+| --- | --- | --- | --- |
+| R01 | 修复 P5 导出失败清理的目录所有权：只有成功独占创建者可清理；竞争注入中另一创建者的目录和哨兵保留，串行成功/失败回归通过 | 无 | ONNX 模型正确性或 FSR |
+| R02 | 修复 P6 发布竞争：每次使用私有唯一 staging，只删除本次创建对象；双发布者竞争中赢家及其文件不被败者删除，失败不发布 success receipt | 无；可复用 R01 的所有权约定 | QAIRT 转换或 HTP 正确性 |
+| R03 | 严格解析 P6 encoding：拒绝非整数/错误类型 bitwidth 与非允许布尔表示，保留合法 SDK 元数据回归；不得以截断或 truthiness 静默正规化 | 无 | 当前 SDK 输出有错或真实 FSR encoding 可用 |
+| R04 | 关闭 M0 evidence 检查到打开的 TOCTOU：基于实际打开对象验证边界/类型并读取；路径替换注入不得读到根外内容，既有 fixture 仍通过 | 无 | Linux `/proc`、sysfs、权限或设备采集 |
+| R05 | 将 M0 公开脱敏发布改为整体事务：唯一 staging、完整校验后一次发布、失败回滚；第二文件写失败不得留下可被误取的半成品 | R04 | 已发生隐私泄漏；也不替代设备端脱敏验证 |
+| R06a | 固化 QAIRT/P6 前端重建配方：Python、33 项 QAIRT 基线依赖及新增 ONNX/protobuf 精确可校验，空 venv 重建后专测与 `pip check` 通过 | P3 历史资产仍可用 | 所有 SDK/native 依赖闭包或设备兼容 |
+| R06b | 将 P6 执行 SDK 绑定到固定快照或等价文件闭包；执行前验证实际导入模块与 native 候选，任一绑定文件被替换时拒绝 | R06a | 密封供应链、恶意主机防护或 HTP |
+| R06c | 补全 P6 环境 receipt：记录并校验实际 Python 版本/解释器哈希、包清单与 P3 快照身份；环境漂移时拒绝 | R06a–R06b | SDK 文件闭包之外的系统依赖均已密封 |
+| R06d | 规范 P6 输出父目录诊断：缺直接父目录时返回统一 PipelineError/稳定退出码，而不是裸 `FileNotFoundError` traceback；正常路径不变 | 无 | 转换产物正确或任意 I/O 故障均可恢复 |
+| R07 | 把 Windows symlink 无条件 skip 改为能力探测：可创建时实跑，不可创建时记录可复现原因；两种分支都有测试 | 无 | POSIX symlink/hardlink 竞态；这些留设备计划 |
+| R08a | 建立显式多 venv 验证入口：依次运行 baseline、reference、fsr-extract、QAIRT suite，保留每组解释器/环境、pass/fail/skip/not_run 和总退出码 | R06a、R07 | CI 云环境、Linux 或设备结果 |
+| R08b | 固化 P3 后代进程继承 stdout/stderr 导致超时回收延长的回归；验收入口在预算内返回、诊断子孙状态且不误报工具成功 | 无 | POSIX 进程组/SIGALRM 或任意第三方进程可强制终止 |
+| R08c | 增加不依赖私有 SDK/资产的公共 CI 工作流，Windows覆盖最低支持Python与当前锁定版本的可公开重建suite，准确报告能力skip；未跑的ARM64/Linux组合仍not_run，私有多venv入口由R08a单独运行 | R07、R08a | QAIRT/FSR私有资产、所有架构/平台或设备CI已覆盖 |
+| R09 | 补 P7 独立语义负例：graph marker/count，以及公共 NPZ 的 100-array、shape、dtype 约束逐项畸形拒绝；不只覆盖坏 ZIP | P7 历史 fixture | 完整图语义、官方 golden 或运行等价 |
+| R10a | 补全 P7 环境 receipt：绑定真实 Python/NumPy、完整 argv 与 extractor stdout gate；缺项或环境摘要不符时拒绝 accepted 发布 | R09 | 来源真实性、完整可重复执行或官方等价 |
+| R10b | 固化 P8 对 P7 的信任链：消费者校验已知 accepted receipt 摘要及其来源/输出绑定，不接受仅内部自洽或旧 wrapper/validated receipt | R10a | 重新提取来源材料或官方等价 |
+| R11 | 将 P9a 历史附加检查固化为测试：8 类 retained 状态、错误身份、大整数容量、active+isolated 边界和永久在途背压 | 无 | 实际 RAM/VRAM/DSP 峰值或后端取消 |
+| R12a | 将 P9b 历史压力检查固化：消费/reset 并发、25+ 窗口和 namespace 独立；明确淘汰后与跨重启仍不保证幂等 | R11 | 稳定 wire 错误或持久幂等 |
+| R12b | 将 P9c 历史压力检查固化：五类 retained、四代预算及 close/completion 并发，迟到事件不污染新代 | R11、R12a | 真后端静止、安全销毁或永久卡死恢复 |
+| R13 | 建当前 artifact 索引：区分 accepted/current、历史/过时和审计临时收据；消费者按固定索引与摘要选取，旧 P8 1-LSB receipt 不得被误认当前 0-LSB 证据 | R10b | 重新执行资产来源核验或产物正确性 |
 
-按用户的个人本地实验用途推进，以取得可用材料、跑通工具链为先；不规划模型/SDK 再分发或商业发布。公开 fork、镜像可作为候选来源，不因不是官方直链而拒绝；保留来源 URL、版本、文件清单和 SHA-256，用于排查错版本、缺件或损坏。随包通知保留即可，不另建许可审计批次；公开可下载不等于内容一定匹配。
+## F：真实 FSR 离线分支
 
-| 材料 | 获取与核对方式 | 无设备时可做什么 |
-| --- | --- | --- |
-| 上游研究源码 | 固定 `fsr4-hexagon` 的 `8c7a972ab70e5693828a856da71ce711232af463`，保存许可证和变更说明 | 审阅/参数化提取与构图脚本；不执行 Android 启动/解锁脚本 |
-| AMD v07 `i8_quality` 源材料 → W8A8 目标 | 官方 SDK 或可核对内容的公开 fork/镜像；按提取脚本实际输入选材料 | 核对文件、哈希、版本，满足条件后提取；仅有 DLL 时报告缺失 |
-| Qualcomm QAIRT/QNN | 从官方 Software Center 取得并锁定一套 SDK；研究上游引用 2.50，尚未选成本项目已验证版本 | Windows 工具安装、help/version、可支持的转换/量化和元数据导出 |
-| NumPy / ONNX / CPU 推理库 | 根据所选脚本、SDK、Python 的兼容组合锁定，分环境安装 | 小图参考、图结构检查、真实资产可用后的网络对照 |
-| Linux ARM64 runtime / HTP 库 | 只登记 SDK 合法提供的候选文件，记录 ELF、依赖和目标信息 | Windows 上只读解析；装载/执行兼容性等待目标镜像 |
-| 平台 FastRPC、CDSP 固件及驱动 | 由目标设备/BSP 提供，版本目前 unknown | 写待核查清单；没有部署目标，当前不下载通用固件代替 |
+F 分支从已有 P7 真材料继续，但仍是 CPU/ONNX/QAIRT 的离线实验。每一步遇到算子、内存、SDK 或来源限制时，记录为该批的具体结果，不用 toy graph、XLSR 或同源输出替代。
 
-AMD 官方 FSR4 发布说明描述的是签名 DLL 和有限源码，不能把“下载了 SDK”直接等同“拿到了提取所需模型”。[AMD 发布说明](https://gpuopen.com/learn/amd-fsr4-gpuopen-release/)。
+| ID | 小批次与主机验收 | 依赖 | 不证明 |
+| --- | --- | --- | --- |
+| F01 | 固化 pass1–13 CPU 参考清单与合同：为每 pass 登记算子、权重、tensor、shape/layout、量化约定、固定输入和独立预期来源；缺项保持 unknown | R10b、P7 历史资产 | 任一 pass 已实现、完整 FSR 或官方等价 |
+| F02a | 实现并验收 pass1–4 CPU 参考与逐层独立对照，覆盖非零输入、signedness、饱和及预声明容差 | F01 | pass5–13、官方 golden 或实时性能 |
+| F02b | 实现并验收 pass5–9 CPU 参考与逐层独立对照，沿用 F01 边界且不由被测实现生成唯一预期 | F01、F02a | pass10–13、GPU 前后处理或时序 |
+| F02c | 实现并验收 pass10–13 CPU 参考与逐层独立对照；若真实算子边界要求调整分组，开工前在记录中固定，但所有 pass 必须恰好归属一个 ID | F01、F02b | 官方等价、GPU 重建或设备执行 |
+| F03 | 组装 pass1–13 完整 CPU 主图，并以独立分段结果做端到端/逐层交叉检查，首个偏差可定位且容差预声明 | F02a–F02c | pass0、GPU 前后处理、完整 temporal FSR 或性能 |
+| F04a | 导出一个最小连续真实分段 ONNX，固定 tensor 名/shape/dtype/QDQ 与来源摘要；checker 通过并拒绝不支持的动态改形 | F02a、R03 | 完整 ONNX 或 QAIRT 可转换 |
+| F04b | 组装 pass1–13 完整 ONNX，逐项核对 F01 图清单、权重和输入输出，不以单段成功替代完整 checker | F03、F04a | ORT 数值正确、QAIRT 或 HTP 可用 |
+| F04c | 用独立 ONNX Runtime 对 F04b 做逐 tensor 对照，定位首个误差点并与 F03 完整 CPU 主图比较 | F03、F04b | GPU 前后处理、时序或官方 golden |
+| F05 | 建真实 FSR calibration/encoding 检查：明确权重/激活 signedness、粒度、scale/offset、I/O dtype 与数据集身份，畸形或不完整合同拒绝 | F03、R03 | 数据集代表真实游戏或量化质量达标 |
+| F06a | 将 F04a 最小真实分段做 QAIRT float 转换并读取 graph/tensor metadata；转换与结构验收成功才可 complete，不支持则记录具体 blocker | F04a、R06b–R06c | 完整 FSR DLC、W8A8 或 HTP |
+| F06b | 对 F06a 分段做 W8A8/B32 量化，逐项核对 F05 encoding 与中间 tensor；量化/metadata gate 成功才可 complete | F05、F06a | 完整网络量化质量或目标 v79 可用 |
+| F06c | 仅在能力探测确认支持时，用 QNN CPU 实跑 F06b 并与 F04c 对应分段比较；不支持则保持未完成/阻塞，不把探测记成执行通过 | F04c、F06b | HTP、完整网络或设备性能 |
+| F07 | 调查 Windows 离线 HTP prepare 对 F06b 分段的可行性，分别记录“调查完成”和“context 生成 gate”；调查可在 gate 失败时完成，但只有真实生成才标记 `generated=true` | F06b | context **保证生成成功**；更不证明设备可加载/执行 |
+| F08a | 建非 production 的真实模型 manifest，关联 F03/F04/F05 已验收图、权重、encoding 和来源；SoC/context/shader 等未知字段保持 unknown | F04c、F05、R13 | production-ready manifest 或 HTP 可用 |
+| F08b | 建小型序列回放合同与 fixture，固定帧身份、阶段输入输出、reset/history 边界及缺失 temporal 输入；只验证离线数据链 | F08a | 完整 temporal FSR、真实游戏帧或画质结论 |
 
-固定上游提取脚本实际读取 `internal/shaders/fsr4_model_v07_i8_quality/` 下的 `initializers.bin`、`passes_1080.hlsl`、`pre.hlsl`、`post.hlsl`，还交叉核对 `dx12/ffx_provider_fsr4_dx12.cpp`。路径相对于 SDK 的 `Kits/FidelityFX/upscalers/fsr4/`。使用 `FIDELITYFX_SDK_ROOT` 指定来源；文件名和目录存在只是预检，还需内容和版本核验。[提取脚本](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/extract/build_weights.py)。
+## E：协议与主机工程准备
 
-量化目标明确为 **W8A8（权重 8 位、激活 8 位）**；INT8 是有符号整数类型，不是与 W8A8 互斥的模型版本。固定上游命令使用 `--act_bitwidth 8 --weights_bitwidth 8 --bias_bitwidth 32`，Q/DQ 构图也使用 `np.int8` 零点；中间 ONNX 仍可能含浮点权重及浮点外部输入。因此不预设需要“INT8 → W8A8”转换：先读取实际 encoding，再判断是否需要构图、布局转换、量化或重新校准。记录权重/激活位宽、signedness、scale/offset、量化粒度和外部 I/O dtype；不能仅凭文件名或 W8A8 标签判断 HTP 可运行。[上游命令](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/README.md)、[Q/DQ 构图](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/onnx/build_qdq_clipfree.py)。
+E 分支只构建自有 fixture、测试 host 和离线事务/观测部件。它不连接真实游戏，也不冻结未经设备证明的最终 ABI。
 
-QAIRT 是工具与 runtime 的集合，QNN 是相关接口/组件；不能将它们视为单个可随意替换的 DLL。上游记录了 Windows 转换路径和 Python 3.12 环境，同时把 HTP 序列化放在设备上，并注明其离线 prepare 路径需要 Linux host。这只是固定上游组合的证据，不推断所有 SDK 版本的能力。[上游模型说明](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/model/README.md)。
+| ID | 小批次与主机验收 | 依赖 | 不证明 |
+| --- | --- | --- | --- |
+| E01 | 实现最小版本化 wire codec：长度、stride、容量、整数溢出、半包、未知版本和稳定错误分类的 round-trip/负例测试 | H4 历史合同 | 最终跨进程协议、鉴权或网络安全 |
+| E02 | 在自有双端 mock 中验证六元身份、单 context 单在途、reset、断连及 `result_consumed` 后才提交 history | E01、P9 历史行为 | socket 发送即游戏写回、真实后端取消或 M4 完成 |
+| E03 | 建最小自有 Windows PE 导出库，只实现测试 ABI 的 create/evaluate/destroy 可观察骨架；导出表和错误输入由自有 host 验证 | 无 | NGX/DLSS 兼容或任何游戏可加载 |
+| E04 | 建独立 PE 测试 host，覆盖参数对象生命周期、重复创建/销毁、版本/能力拒绝及崩溃隔离，不接 Steam/Proton | E03 | 真实游戏调用约定、FEX/Wine/Proton 链 |
+| E05 | 建自有 D3D11 纹理 fixture，逐项测试 format/view/mip/RowPitch、readback/writeback、context ownership 和资源状态恢复 | E04 | 真实游戏资源语义、D3D12/Vulkan 或零复制 |
+| E06a | 在临时目录实现只读部署 `plan`：生成目标、前置条件、原文件哈希和预期变更；外部修改或路径越界在 apply 前拒绝 | 无 | 实际安装、Linux 用户服务或可发布产品 |
+| E06b | 实现事务 `apply/restore`：唯一 staging、哈希备份和 journal；正常应用后可按同一 journal 精确恢复，重复请求幂等 | E06a | 崩溃恢复、Steam/Decky 安装或运行中会话安全 |
+| E06c | 实现 `recover` 故障注入：在各提交点中断后可判定前滚/回滚，外部修改冲突不覆盖用户内容 | E06b | 断电文件系统语义、Linux 服务或卸载全链 |
+| E07 | 定义 trace/event schema 与主机记录器：阶段、fresh/repeat、身份、clock domain、错误和丢事件显式；不同钟域不得直接相减 | E01–E02 | 设备时钟相关性、input-to-photon、FPS/功耗收益 |
+| E08 | 组装仅自有资产的离线 integration host：PE 调用、D3D11 fixture、wire mock 和 trace 以显式边界串联；故障注入证明不提交错误 history | E02、E04–E05、E07；可选 E06 | 完整产品、真实 FSR/HTP、游戏画质/性能或部署可用 |
 
-官方 [Software Center](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community) 是 SDK 获取入口；本轮未登录下载、未验证其具体可获取版本。Qualcomm 的 [AppBuilder 环境说明](https://github.com/qualcomm/qai-appbuilder/blob/main/docs/user_guide.md)提供 SDK 获取和 runtime 布局参考，其中 WoS 运行示例不能当作本机 AMD64 或 Armada 支持证明。最终以取得的 SDK 内本版本 setup 文档、发行说明和实际 `--help` 为准。
+## 设备分界与停止条件
 
-模型、SDK 和生成资产放在忽略的本地目录，不随代码提交；保留现有通知，不把“个人使用”写成任意材料都获授权的结论。只有实际下载需要账号或接受条款时才请用户操作，不为纯离线工具工作增加前置手续。[上游第三方说明](https://github.com/puzzled-pancake/fsr4-hexagon/blob/8c7a972ab70e5693828a856da71ce711232af463/THIRD_PARTY.md)。
+无设备批次不得吸收以下验收：Odin 3 真实 M0 档案、Linux glibc/Android bionic/Hexagon 库装载、FastRPC/CDSP/固件/权限、普通用户 HTP、真实 GPU 同步、游戏 Evaluate/写回、长序列画质、帧率/延迟/温度/功耗。P4 留下的 POSIX 目录到 hardlink 竞态以及普通 symlink、进程组、SIGALRM、真实 sysfs/权限也只在相应 Linux/设备环境验证。
 
-## 3. 分批实施与验收
-
-下面的工具路径是建议新增项，除已引用的 H 工具外均尚未实现。每批只完成一个行为；代码、合同及测试交 Astra medium 审实际 diff，修复后复核。每批一份短记录加 STATUS，不生成成套重复文档。
-
-### P1：可重建的 Windows 环境入口
-
-- 产物：`tools/host/` 下的环境预检/初始化入口及简短说明；接受显式 Python executable 路径，验证版本、AMD64/ARM64 和 pip，使用仓库 `.venv`。
-- 范围：基线环境仍按现有 requirements；不自动覆盖现有 venv。QAIRT 环境单独放在忽略的 `local/venvs/qairt-<version>/`，版本由 P3 决定；系统 Python 3.9 保留。
-- 验收：新空目标环境可由 Python 3.10+ 创建并跑主机 suite；3.9、失效路径、有冲突的现存环境报明确错误；含空格路径可用。记录基础解释器来源及重建命令，不依赖 `py -3` 或 Codex 缓存固定路径。
-- 依赖：无 SDK/FSR 依赖。下一个首先执行的批次。
-
-### P2：外部资产登记与只读核验
-
-- 产物：`tools/assets/` 中的小型登记/核验工具、合成 fixture。记录组件、来源 URL、版本/commit、平台/架构、实际文件 SHA-256、用途及缺失原因；随包通知有则记录位置，没有则如实标 unknown，不单独阻塞内容检查。
-- 范围：仅检查调用方明确提供的根目录；私有绝对路径留本地，公开记录使用逻辑名/相对路径。真实资产登记与 H2 synthetic schema 分离，不把 H2 的安全标志改成可用于生产。
-- 验收：完备合成包通过；缺文件、哈希不符、错误格式、路径越界和过大输入确定性拒绝；无实际文件时不得填造哈希。区分文件 present、元数据 verified 与执行 not_run。
-- 依赖：P1；工具测试不需要任何外部资产。
-
-### P3：QAIRT 获取、隔离安装与工具冒烟
-
-- 产物：一套可追溯的本地 SDK、专用 Python 环境及工具能力表；版本选择优先核查上游 2.50，不可用/不匹配时记录原因再选择候选，不默默混装 2.45/2.50。
-- 范围：先核对下载来源、许可和包内主机支持；只运行适合本机架构的版本/help 检查。SDK 路径和 PATH/PYTHONPATH 仅注入本次子进程。只有实际需要编译时才准备相应 C++ 工具链。
-- 验收：可运行的 converter、quantizer、metadata 工具分别记录精确 argv、版本、退出码；缺工具、错误 Python/架构给出明确诊断。Windows CPU backend 和离线 HTP prepare 各自登记支持证据，未支持者列为后置，不能因 help 成功写成转换成功。
-- 依赖：P1/P2 和合法 SDK 下载。账户登录/条款需要本人操作时，仅暂停本批资产步骤，转做 P5/P9；不能把安装说明当作安装完成。
-
-### P4：目标库的离线 ABI 清单
-
-- 产物：Windows 可运行的只读 PE/ELF 检查器与自有最小 fixture，登记 machine、位数、可读取的 ELF interpreter/NEEDED/GLIBC 符号版本和 SDK 版本归属。
-- 验收：拒绝截断/越界结构，区分 Windows PE、Android 候选、Linux glibc 候选；不能仅凭 AArch64 或文件夹名认定 ABI。合成样例覆盖缺失字段和错误架构；取得真实 SDK 后生成候选清单，设备匹配结论仍 unknown。
-- 依赖：P2；真实库登记追加依赖 P3，解析器本身不依赖 SDK。不在 Windows 加载 ARM64 ELF。
-- 可先交付合成解析部分，但 P4 保持 `in_progress`；真实 SDK 清单条件不满足时记录 `blocked`。仅在解析测试和可取得候选库清单均完成、缺失目标库如实登记后标记 P4 complete，平台兼容性仍 unknown。
-
-### P5：自有小图与 CPU 数值基准
-
-- 产物：小型 Conv/Add/ReLU ONNX 图和独立参考输出，包含零输入、固定图案及固定种子非零输入；锁定 ONNX/CPU runtime 组合。
-- 验收：ONNX checker、固定 tensor 名/shape/dtype、CPU backend 身份与逐元素对照通过；改变输入必须影响指定输出；事先规定容差，测试错误 shape 与异常数值。图不能被全常量折叠；依赖和张量大小保持小型。
-- 依赖：P1/P2；无需 FSR 或 QNN。环境放在独立的 `local/venvs/reference/`，不污染基线 `.venv`。
-
-### P6：小图的 QAIRT 转换与量化
-
-- 产物：将 P5 小图按 W8A8 目标转换/量化为所选 SDK 支持的中间表示，读取真实 graph/tensor/encoding 元数据，登记生成链及哈希；核对实际权重和激活位宽，不以成功传入参数代替产物检查。
-- 验收：实际转换成功、产物可被配套 metadata 工具读取；校准列表和量化 convention 可追溯；失败保留日志、不发布半成品为成功。若该 Windows 包支持 CPU 执行，则与 P5 比较并注明 backend；否则仅报告 build，CPU SDK 执行保持 not_run。
-- 依赖：P3/P5。HTP context 只在本版 Windows 工具明确支持时作为另行选择的实验；Linux-only prepare 不阻塞本批中间表示验收。小图不命名为 FSR。
-
-### P7：FSR v07 材料接收与权重提取
-
-- 产物：锁定研究源码和匹配的模型材料（可来自公开 fork/镜像）；封装/参数化原有提取流程，将结果写到新的 `artifacts/` 子目录，记录来源、版本和 SHA-256，保留随包通知。
-- 验收：实际五类输入齐备、上游自检和 provider 交叉核对通过；解析失败不得把输出标成有效；对自有片段补截断、错误版本和字节序测试。生成 npz/graph spec 不随源码发布。
-- 依赖：P2 和可核验的 AMD 源材料；不依赖 QNN。若只有 DLL、缺实际输入或内容/版本核验失败，本批为 blocked，其它资产无关批次继续。镜像压缩包按同一文件清单检查；不能把任意 `.bin` 或 XLSR 当作匹配的 FSR 材料。
-
-### P8：FSR 网络子图的 CPU 对照
-
-- 产物：基于 P7 真实提取结果运行上游 simulator/ONNX 参考，选可支持的小尺寸或有限样本，登记图、权重、输入与分阶段输出。
-- 验收：记录自检与独立算子/不同实现的交叉对照，明确两者共享来源时的证据局限；包括量化、布局和非零输入，容差预先定义。只散列输出不算数值正确。上游只支持固定大尺寸时先评估内存，不凭空 reshape。
-- 依赖：P7/P5。缺官方 golden 则官方等价性 unknown；此批只覆盖选定网络分区，GPU 特征准备、重建和真实时序输入未验证。完整模型 QNN 转换另批规划，不塞入本批。
-
-### P9：生命周期加固（明确分三个单次批次）
-
-- P9a 资源预算/背压：为 H4 的旧代隔离资源规定数量与容量上限，明确其如何计入同 context 在途限制。验收：连续 submit/reset/timeout 达到上限后拒绝新工作；仍在途对象不被淘汰；匹配完成后回收、解除背压；拒绝路径不改 generation/history。依赖 H4。
-- P9b 幂等记录保留：为消费确认和 reset 去重记录确定保留范围及过期通知语义。验收：记录数量有界；保留窗口内重试幂等，冲突通知拒绝；过期重复通知不能二次提交或推进 generation。依赖 P9a，单独审阅记录过期与公共幂等语义的兼容性。
-- P9c 合成失败/关闭：增加最小 execution-failure/close 事件和可区分的候选 history 测试。验收：处理中失败与关闭不提交候选；仍在途资源继续保留，显式完成后才回收；迟到事件不能污染新代。永久不完成明确保持隔离/阻塞，不能宣称已取消。依赖 P9a/P9b，不扩到逐 GPU 阶段实现。
-
-三批均不依赖 SDK/FSR。策略若改变共享合同，配套更新并由 Astra 审阅；仍不实现网络 daemon 或真实后端。P1–P8 加 P9a/P9b/P9c 共 11 个单次执行批次。
-
-## 4. 执行顺序与停止条件
-
-默认先 P1 → P2 → P3。P3 被账户/下载/平台条件阻塞时，继续 P5 或 P9；P4 的合成解析测试也可继续。P6 需要 P3+P5；P7 需要独立满足 FSR 资产条件，P8 需要 P7+P5。这些分支只按独立文件边界派工，不为并行而重复研究。
-
-每次单次提示只取一批（P9 必须选一个子批次）并停止；这一轮仅完成评估和队列规划。P 项 complete 不改变 M0–M9 的设备门槛。全部必需验收通过才结束本阶段；剩余项均有具体外部阻塞时结束本次执行，保留阶段未完成和对应 blocked 项，不自动扩到驱动、网络服务、NGX、Decky、Steam 安装器或游戏验证。
-
-有设备后再决定 Linux runtime、FastRPC/BSP、HTP 架构及真正的执行链。没有设备时仍可显著减少来源、工具版本、文件格式、图构建和状态机的不确定性；不能据此估计 HTP 性能或整帧收益。
+可并行推进的主线是 R 清账、F 离线模型和 E 主机工程；真正产品关键路径仍在设备计划中汇合。某一分支缺资产时只暂停该分支；若一个批次的验收会要求真实设备或改变最终 ABI，则停止该批，把问题和最小所需输入写回 STATUS，而不是用 mock 宣告完成。

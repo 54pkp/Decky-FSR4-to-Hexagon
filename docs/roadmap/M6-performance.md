@@ -1,8 +1,8 @@
 # M6：性能、延迟与能耗决策
 
-> 状态：路线设计；本节点尚未实现或在 Odin 3 上验证。文中工具、配置和字段除公共合同外均为拟议接口。
+> 状态：**`not_started`；真实设备、游戏和性能 gate 均 `not_run`。** 实施只从 [D30、D31a–D31c](DEVICE_EXECUTION.md#m6性能延迟内存与能耗) 选择一个小批次；均需要真实设备和游戏，D31c 另需物理延迟测量手段。无设备 trace/schema 准备属于 [E07](HOST_PREPARATION.md#e协议与主机工程准备)。本文保留技术依据，不作为第二套队列。
 
-先读 [AI 实施指南](../ai/IMPLEMENTATION_GUIDE.md)、[公共合同](../architecture/CONTRACTS.md)、[项目状态](../STATUS.md) 和 [归档研究](../reference/2026-09-20-feasibility.zh-CN.md)。本节点的结果决定哪些模式可以推荐给用户；得到负面结果同样是有效产出，不能为了显示收益删除不利样本。
+[D 执行队列](DEVICE_EXECUTION.md) · [公共合同](../architecture/CONTRACTS.md) · [项目状态](../STATUS.md) · [归档研究](../reference/2026-09-20-feasibility.zh-CN.md)。本节点的结果决定哪些模式可以推荐给用户；负面结果同样有效，不能为了显示收益删除不利样本。
 
 ## 1. 目标与边界
 
@@ -147,9 +147,11 @@ artifacts/M6/<run_id>/                # 大体积原始数据，默认不入库
 - 默认模式有明确设备/游戏范围与准入阈值；阈值在测量前约定，不能把单个 FPS 百分比作为全部准入条件。
 - 所有 gate 使用 `not_run` / `pass` / `fail` / `blocked`，并链接原始数据；性能收益为负时可完成研究，但不得标推荐模式通过。
 
-## 9. 交接与 AI 提示词
+## 9. 批次记录与旧提示
 
-交接包包含构建 SHA、原始 trace 索引与哈希、实验配置、重复运行列表、画质复验、传感器误差、瓶颈排序、默认模式 ADR 和仍未测量项目。报告保存到 `docs/validation/M6/YYYY-MM-DD-<work-package>.md`，交接为同名 `-handoff.md`。下一步通常是把 M6 结论写入 M7 profile 与 M8 展示能力。
+所选 D 批用一份短记录保存构建 SHA、原始 trace 索引与哈希、实验配置、重复运行、画质复验、传感器误差、瓶颈和未测项；默认模式等重大决定才写 ADR，不再强制独立 handoff。下一步通常是把 M6 结论写入 M7 profile 与 M8 展示能力。
+
+> 下列历史提示不得再用于整体启动 M6；当前只从 D30、D31a、D31b、D31c 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 实施 M6 的一个可审阅批次，先读取 docs/ai/IMPLEMENTATION_GUIDE.md、公共合同、

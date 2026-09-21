@@ -1,8 +1,8 @@
 # M8：Steam 与 Decky 控制界面
 
-> 状态：路线设计；当前仓库没有可安装 Decky 插件。本文的组件、调用名、页面与工作流均为拟议实现。
+> 状态：**`not_started`；真实 Decky/Steam 宿主与游戏 gate 均 `not_run`。** 实施只从 [D34a–D34c](DEVICE_EXECUTION.md#m8真实-steam--decky-宿主) 选择一个叶子批次。当前仓库没有可安装 Decky 插件；本文的组件、调用名、页面与工作流均为拟议实现，不作为第二套队列。
 
-先读 [AI 实施指南](../ai/IMPLEMENTATION_GUIDE.md)、[公共合同](../architecture/CONTRACTS.md)、[M7](M7-launcher-packaging.md) 和 [项目状态](../STATUS.md)。Decky 是可选管理界面，运行链路与恢复能力必须在没有 UI 时成立。
+[D 执行队列](DEVICE_EXECUTION.md) · [公共合同](../architecture/CONTRACTS.md) · [M7](M7-launcher-packaging.md) · [项目状态](../STATUS.md)。Decky 是可选管理界面，运行链路与恢复能力必须在没有 UI 时成立。
 
 ## 1. 目标与非目标
 
@@ -142,9 +142,11 @@ type MutationRequest = GameRequest & {
 - 插件断开后运行链路正常，CLI 可独立恢复；没有 M6 证据的 mode 不显示为推荐。
 - 记录截图/操作视频索引、宿主版本、失败场景与 gate；无设备部分保持 `not_run`。
 
-## 9. 交接与 AI 提示词
+## 9. 批次记录与旧提示
 
-交接包括宿主能力表、API 版本、AppID 来源证据、控制方法白名单、UI 状态图、竞态测试、手柄操作记录、恢复命令与升级限制。填写 [交接模板](../templates/handoff.md)，报告保存到 `docs/validation/M8/YYYY-MM-DD-<work-package>.md`，交接为同名 `-handoff.md`。
+所选 D 批用一份短记录保存宿主能力表、API 版本、AppID 来源证据、控制方法白名单、UI 状态图、竞态测试、手柄操作记录、恢复命令与升级限制，不再强制独立 handoff。
+
+> 下列历史提示不得再用于整体启动 M8；当前只从 D34a、D34b、D34c 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 实施 M8 的一个批次，先读取 M7 已有接口、公共合同和真实 Decky 宿主版本。

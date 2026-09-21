@@ -1,8 +1,8 @@
 # M9：兼容性扩展与后续输入适配
 
-> 状态：路线设计；OptiScaler Hexagon 后端、新的 D3D12/Vulkan 接入和原生 FSR API 适配均未实现。原生 FSR 仅建立专项入口，不在本节点提前展开深度研究。
+> 状态：**`not_started`；MVP 后可选，所有真实兼容性 gate 均 `not_run`。** 当前唯一预分配入口是 [D35](DEVICE_EXECUTION.md#m9mvp-后兼容扩展示范) 的第二个同 API 游戏；OptiScaler、D3D12、Vulkan 和原生 FSR API 需在 MVP 决策后另增连续 D 编号。本文保留技术依据，不作为第二套队列。
 
-先读 [AI 实施指南](../ai/IMPLEMENTATION_GUIDE.md)、[公共合同](../architecture/CONTRACTS.md)、[M3](M3-game-probe.md)、[M5](M5-temporal-quality.md)、[M6](M6-performance.md) 与 [项目状态](../STATUS.md)。若相关文档的实际文件名调整，以路线索引为准。
+[D 执行队列](DEVICE_EXECUTION.md) · [公共合同](../architecture/CONTRACTS.md) · [M3](M3-game-probe.md) · [M5](M5-temporal-quality.md) · [M6](M6-performance.md) · [项目状态](../STATUS.md)。
 
 ## 1. 目标与范围
 
@@ -137,9 +137,11 @@ profile 的能力声明只包含证实的功能，例如固定 SDR shape、支�
 - 所有 gate 使用 `not_run` / `pass` / `fail` / `blocked`；兼容性标签必须链接到具体组合报告。
 - 没有覆盖矩阵证据不得发布“所有 DLSS/FSR 游戏可用”；原生 FSR 入口调查完成也不等于 FSR backend 完成。
 
-## 9. 交接与 AI 提示词
+## 9. 批次记录与旧提示
 
-交接包含变体矩阵、固定源码、adapter 输入映射、同步时间线、最小失败复现、游戏测试清单、性能结果与恢复步骤。报告保存到 `docs/validation/M9/YYYY-MM-DD-<work-package>.md`，交接为同名 `-handoff.md`。每次只选择一个工作包，按结果更新状态与 [ADR](../templates/adr.md)。
+所选 D 批用一份短记录保存变体矩阵、固定源码、adapter 输入映射、同步时间线、最小失败复现、游戏测试、性能结果与恢复步骤，不再强制独立 handoff。重大公共决策才写 ADR。
+
+> 下列历史提示不得再用于整体启动 M9；当前只允许选择 D35。其它 API/前端必须在 MVP 后新增连续 D 编号。保留它仅供核对技术禁区。
 
 ```text
 实施 M9 的一个明确工作包，不同时扩展模型与多个 API。先读取公共合同、

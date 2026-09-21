@@ -1,8 +1,8 @@
 # M1：Linux QNN / Hexagon NPU 平台闸门
 
-状态：**未执行；没有 Odin 3 HTP 成功记录。** 前置：[M0 设备建档](M0-device-baseline.md)；后续：[M2 FSR4 v79 离线移植](M2-fsr4-port.md)。本节点不需要先确定游戏。
+状态：**`not_started`；真实设备 gate `not_run`，没有 Odin 3 HTP 成功记录。** 实施只从 [D06–D11](DEVICE_EXECUTION.md#m1真实-linux-qnn--htp-平台) 选择一个小批次；依赖 [M0](M0-device-baseline.md)，不需要先确定游戏。本文保留技术依据，旧 M1-A–M1-D 不作为活动批次。
 
-执行约束和状态字段遵循 [AI 实施总则](../ai/IMPLEMENTATION_GUIDE.md)、[共享合同](../architecture/CONTRACTS.md)、[项目状态](../STATUS.md)。唯一的核心结论是：**普通用户能否在目标 Linux 上运行已知小图，并证明运算确实发生在 HTP。**
+[D 执行队列](DEVICE_EXECUTION.md) · [共享合同](../architecture/CONTRACTS.md) · [项目状态](../STATUS.md)。本节点唯一核心结论是：**普通用户能否在目标 Linux 上运行已知小图，并证明运算确实发生在 HTP。**
 
 ## 1. 目标和非目标
 
@@ -173,8 +173,8 @@ fake backend 必须使用独立测试路径和明显名称，生产 `--backend h
 
 错误定位顺序：文件/ABI → provider/API → backend/device → context/graph → tensor/buffer → execute → 数值验证。FastRPC 节点缺失不是“熔断”的直接证据；存在节点也不是成功证据。
 
-交接按 [模板](../templates/handoff.md) 保存 SDK 精确版本、依赖哈希与路径角色、SoC 枚举出处、HTP 实际身份、最小复现命令、日志、重复次数、恢复要求和未验证项。报告旁保存对应 `-handoff.md`，原始证据在 `artifacts/M1/<run-id>/`，实际执行时才创建。M2 只能继承这一**完整组合**，升级任一平台依赖需重测相应门槛。
+所选 D 批用一份短记录保存 SDK 精确版本、依赖哈希与路径角色、SoC 枚举出处、HTP 实际身份、命令、日志索引、重复次数、恢复要求和未验证项；不再强制另建 handoff。M2 只能继承这一**完整组合**，升级任一平台依赖需重测相应门槛。
 
-## 10. 可复制给下一位 AI 的任务提示词
+## 10. 旧执行提示（停用）
 
-> 请按本文件实现 M1 的最小 Linux QNN 探针，先读共享合同、状态与 M0 设备档案。先完成依赖/ABI 审计，然后分批实现 provider、context、确定性小图 graphExecute、输出比较和生命周期测试。只用普通用户、原生 AArch64 Linux runtime；CPU/fake backend 必须独立标记，禁止失败后静默回退。不要刷机、修改设备树、运行 RP6 解锁流程或分发 proprietary SDK。不要仅因编译成功、provider 可加载、context 可创建就宣布通过。没有设备时交付工具、明确的离线构建证据和待执行命令，device_test 保持 not_run。真实 HTP 执行需保存后端身份、返回码、输入/输出摘要、数值误差与 profiling/设备证据。遇到 DSP crash 停止压力测试。最终列出 M2 能继承的精确环境组合和所有未验证项。
+> 原可复制提示已停用；它会整体启动 M1。只从 [D06–D11](DEVICE_EXECUTION.md#m1真实-linux-qnn--htp-平台) 选择一项，技术约束以上文为准。

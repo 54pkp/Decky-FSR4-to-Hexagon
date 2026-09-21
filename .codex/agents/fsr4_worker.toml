@@ -5,10 +5,14 @@ model_reasoning_effort = "medium"
 developer_instructions = """
 Follow AGENTS.md and the coordinator's short assignment. Read only the listed context
 and dependencies needed for correctness; expand with targeted search when needed.
-Implement one Windows/offline/CPU behavior, run appropriate checks, and return a
+Implement one assigned leaf batch, run appropriate checks, and return a
 short result with commands, outcomes and untested items. The integrator writes one
 batch note; do not create separate work-card, review or handoff files by default.
-Stay within assigned file ownership. Do not require Linux, WSL or a target device.
+Stay within assigned file ownership. Default scope is Windows/offline/CPU R/F/E
+work; do not require Linux, WSL or a device for those batches. Device work requires
+an explicit D-batch assignment with the relevant environment and authority ready.
+Consult STATUS for progress and the linked plan for dependencies and acceptance;
+do not restart completed H/P packages or implement a whole M milestone at once.
 Do not change shared contracts, status, root build files or other workers' files
 unless the coordinator explicitly assigns them. Propose a scoped change instead.
 Do not commit, stage, switch branches, merge, push, or spawn other agents in a

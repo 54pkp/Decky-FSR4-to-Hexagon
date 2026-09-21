@@ -1,31 +1,48 @@
 # Repository guidance
 
-## Current scope and reading
+## Start here
 
-Develop on Windows without an attached Odin 3. The current phase is theory, offline tools and CPU validation, not a functioning FSR4 upscaler. Do not require Linux, WSL, QNN, a game or a device to start a host package. Real model execution requires legitimate, identified assets; synthetic inputs never prove FSR4 equivalence.
+- Read `docs/STATUS.md` for current progress and the next eligible batch, then `docs/ai/MULTI_AGENT_WORKFLOW.md`. Use `docs/README.md` as the documentation map.
+- Default environment: Windows, no attached Odin 3. Theory, offline tools, CPU tests and explicitly scoped Windows build/fixture work are allowed. Do not require a game, Linux/WSL or a device for an independent host batch.
+- H1–H4 and P1–P8/P9a–c are completed historical preparation packages, not the active queue. Their completion never meant complete FSR4, HTP or game support.
+- Active device-free work is specified in `docs/roadmap/HOST_PREPARATION.md`: R repairs/reproducibility, F real-model offline work, E bounded engineering preparation. Device-dependent D packages are in `docs/roadmap/DEVICE_EXECUTION.md`. Select only a package whose dependencies and environment are satisfied.
+- M0–M9 remain technical milestone references, not a second competing task queue. Historical reports and `FIRST_BATCH.md` are evidence, not instructions to restart completed work.
 
-Start with `docs/STATUS.md` and `docs/ai/MULTI_AGENT_WORKFLOW.md`, then relevant source/tests. Read contract sections and `docs/roadmap/` only when needed. `docs/reference/`, completed `FIRST_BATCH.md` and old validation reports are reference evidence, not a queue to restart. Current lightweight rules replace old per-milestone paperwork requirements.
+## Repository and ownership
 
-## Coordination
+Prefer the current repository when its normalized origin matches `https://github.com/54pkp/Decky-FSR4-to-Hexagon.git`. Otherwise inspect only the current user's `Documents/GitHub/Decky-FSR4-to-Hexagon`; clone if absent, stop if occupied by unrelated content. Do not search the whole disk or overwrite a directory.
 
-- Coordinator and user communication: GPT-5.6 Sol / medium. Development pool: up to three GPT-5.6 Sol / medium workers. Batch reviewer: GPT-6 Astra / medium. Use Astra / xhigh only for a specific architecture decision; never default to Ultra.
-- Delegate only independent bounded packages. Small changes may use one worker or the coordinator; do not invent work to fill slots. Give each worker its goal, allowed paths and checks in a short message, not full chat history.
-- Verify selected model/effort through role configuration or explicit supported spawn parameters. Configuration files do not switch the current conversation's model.
-- Only the integrator stages, commits, merges, pushes and updates shared status/contracts. Workers own non-overlapping paths, return concise evidence and never recursively delegate. Preserve existing changes.
-- Review substantive code/contract batches against the actual frozen diff, including new files, plus relevant source/tests. Fixes require affected checks and focused re-review. Formatting/link-only edits need no Astra pass.
+Inspect status before changing anything. Sync only a clean, fast-forwardable tree; preserve dirty or diverged state. Never reset, clean, force-push or include unrelated edits to manufacture success. Only the integrator stages, commits, merges, pushes and updates shared status/contracts. Verify GitHub identity and remote; do not use the historical `unknown` author.
 
-## Work and evidence
+## Roles
 
-- Pick one small behavior from the active queue in STATUS (currently P1-P9; H1-H4 are complete). Read docs/roadmap/HOST_PREPARATION.md for its prerequisites and acceptance. Single-run mode finishes one batch, including fixes and handoff, then stops. Goal mode continues only the frozen active host-phase queue; completing it does not complete the hardware roadmap.
-- Use one short batch record plus STATUS. Separate work-card, review-packet and handoff files are optional. Record goal, base revision/diff identity, actual environment/backend, commands/exit codes, result, review, gaps and next action. Hash external inputs/generated numerical artifacts when relevant, not every Markdown file.
-- Follow `docs/ai/IMPLEMENTATION_GUIDE.md` for evidence definitions. Never report source inspection, build, CPU/mock, XLSR, CAS or bilinear results as FSR4 on HTP, device or game validation. Keep unavailable measurements unknown, not zero or pass.
-- Keep schema, producer, consumer and tests consistent. Record routine choices in the batch note; create an ADR only for a consequential ABI, synchronization or licensing decision.
-- Preserve history and upstream notices. Do not redistribute unverified model/SDK/firmware/game assets, collect credentials, modify firmware/system permissions or run unlock scripts as incidental work.
+- Coordinator/integrator and communication: GPT-5.6 Sol / medium.
+- Up to three independent workers: GPT-5.6 Sol / medium.
+- Substantive code, tests, contracts or consequential acceptance/roadmap changes: GPT-6 Astra / medium review of the actual frozen diff and new files.
+- Use Astra / xhigh only for a specific architecture decision, never Ultra by default. Small wording/link changes may use coordinator self-check.
+- Select models through supported role/model parameters; a prompt or edited configuration does not switch an already running conversation. Disclose unavailable/mismatched roles instead of claiming compliance.
+- Give workers bounded goals, exact owned paths and checks. Workers do not recursively delegate or mutate Git. Do not invent work to fill slots; respect lower host concurrency limits.
 
-## Technical boundaries to retain
+## Execution and documentation
 
-- Future target: AYN Odin 3, Snapdragon 8 Elite, Armada OS; actual image, SoC, graphics and PE/ELF loading chain remain unverified.
-- Android ARM64 and Linux glibc ARM64 libraries are not interchangeable. NPU network execution still requires GPU preprocessing, temporal state, reconstruction and synchronization.
-- Baseline: same-frame, one request in flight per context. Reject stale/mismatched output. Timeout does not prove work stopped or make in-flight buffers safe to release.
-- Device/game tests remain `not_run` during this phase. Do not manufacture Linux evidence on Windows or treat skipped tests as passed.
-- Keep private/large artifacts in ignored directories. Public Chinese/English READMEs must agree with actual status.
+1. Select one leaf batch from STATUS and its linked plan; name dependencies, scope, acceptance and exclusions. A grouping is not a single-run batch.
+2. Implement or investigate only the requested behavior. A review/planning request does not authorize implementing the findings or starting the new queue.
+3. Run relevant checks, obtain review where required, fix findings and recheck affected behavior.
+4. Write one short batch note and update STATUS. Record the base revision, actual environment/backend, exact commands/exit codes, skips, failures, review and one next step.
+5. Commit/push only within the user's authorization and repository workflow. Preserve failed-push evidence and local work; do not loop without new information. Single-run mode stops after that batch.
+
+Do not create a Goal or automation unless the user explicitly requests it. For an explicitly requested Goal, freeze a bounded objective and batch subset at startup; never silently expand to all future R/F/E/D work. Hardware gates remain independent.
+
+STATUS owns live progress, next action and evidence links. Plans own batch definitions/dependencies/acceptance. Tool READMEs own actual commands. Public READMEs own a concise capability summary. Historical dated reports retain their original conclusions; new findings get a new record, not rewritten history. Update only affected current pages and keep Chinese/English entry points aligned.
+
+## Evidence and technical boundaries
+
+Follow `docs/ai/IMPLEMENTATION_GUIDE.md`. Distinguish source review, build, host, device and game evidence. Never report CPU/mock/QNN CPU, XLSR, CAS or bilinear as FSR4 on HTP. Unknown measurements are unknown, not zero or pass. A skipped test is not a passed test.
+
+Known audit defects remain open until their R batch has implementation and regression evidence. Do not infer that a historical complete batch has no defects. The local SDK, weights and venvs are ignored assets, not available automatically on a fresh clone; verify explicit paths rather than relying on personal cache locations.
+
+- Target intent: Odin 3 / Snapdragon 8 Elite / Armada OS; actual image, SoC, GPU, HTP and PE/ELF loading chain remain unverified.
+- Android ARM64 and Linux glibc ARM64 are not interchangeable. W8A8 describes weight/activation bitwidth; record signedness, scale/offset, granularity and external I/O separately.
+- Same-frame baseline: one in-flight request per context; reject stale or mismatched output. Timeout/failure/close does not prove backend quiescence or permit early buffer release. Commit history only after valid consumption acknowledgement.
+- Real-model CPU work uses identified, integrity-checked material. Public forks/mirrors may be used for personal experiments with necessary source/version/hash/notices; do not add a separate license-audit batch or redistribute external model/SDK/firmware/game assets.
+- Keep large/private artifacts in ignored directories. Do not collect credentials, change system permissions/firmware, run unlock scripts or install Linux/WSL as incidental work.

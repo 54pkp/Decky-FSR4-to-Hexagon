@@ -4,9 +4,9 @@
 file using only the Python standard library. It never loads or executes the file.
 
 ```powershell
-python tools/abi/inspector.py path/to/library --expect-machine arm64
-python tools/abi/inspector.py path/to/hexagon/library --expect-machine hexagon
-python tools/abi/inspector.py path/to/library --sdk-version 2.50.0
+.\.venv\Scripts\python.exe tools/abi/inspector.py path/to/library --expect-machine arm64
+.\.venv\Scripts\python.exe tools/abi/inspector.py path/to/hexagon/library --expect-machine hexagon
+.\.venv\Scripts\python.exe tools/abi/inspector.py path/to/library --sdk-version 2.50.0
 ```
 
 The JSON report records format, machine, bitness, explicit SDK metadata (or
@@ -26,7 +26,7 @@ deterministic inventory without searching `PATH`, expanded SDK directories, or
 the rest of the disk:
 
 ```powershell
-python tools/abi/inventory.py `
+.\.venv\Scripts\python.exe tools/abi/inventory.py `
   --archive downloads/qairt-community-2.49.0.260730.zip `
   --output artifacts/qairt-abi-inventory.json
 ```
@@ -40,6 +40,10 @@ gcc9.3/Ubuntu V79 stubs and gcc11 `libcdsprpc.so`); a V81 file is never used as
 a V79 fallback. The output keeps device matching `unknown` and execution
 `not_run`, refuses to replace an existing file, and contains no absolute paths
 or timestamps.
+
+The output parent must already exist and must not traverse a reparse point. Use
+a new output filename for every run, then verify the published report hash
+before using it as evidence.
 
 The selected allowlist is deliberately not a full SDK inventory. In particular,
 the x86_64 Windows `QnnHtp.dll`, Android `libQnnHtpPrepare.so`, and OE gcc11.2

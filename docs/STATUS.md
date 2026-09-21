@@ -1,66 +1,70 @@
 # 当前状态与下一步
 
-当前开发环境：**Windows；未连接 AYN Odin 3；只做理论、离线和 CPU 验证。**
-目标设备仍为 Odin 3 / Snapdragon 8 Elite / Armada OS，实际镜像、ABI、HTP 和游戏均未验证。首个游戏未定，不阻塞下面的主机队列。
+更新：2026-09-22。事实基准：`574a80229b58e0dd678532ce373055bbbb83a128` 的代码审计与Windows复跑；本轮只重构文档，没有修复审计缺陷或实现新功能。
 
-[首页](../README.md) · [轻量规则](ai/MULTI_AGENT_WORKFLOW.md) · [单次提示](ai/SINGLE_RUN_PROMPT.md) · [Goal 提示](ai/GOAL_PROMPT.md)
+[文档地图](README.md) · [无设备批次](roadmap/HOST_PREPARATION.md) · [设备批次](roadmap/DEVICE_EXECUTION.md) · [单次提示](ai/SINGLE_RUN_PROMPT.md)
 
-## 已有成果
+## 现在处于什么阶段
 
-M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 Python 回归已实现。
-证据：[主机集成](validation/M0/2026-09-20-host-integration.md)、[修复报告](validation/M0/2026-09-20-review-fixes.md)、[定点复审](validation/M0/2026-09-20-first-batch-rereview.md)。
-后续审计发现并修复了 public-v1 的路径豁免、序列号类型/拼写和任意 `value` 关系遍历问题；见 [脱敏边界加固](validation/host/2026-09-20-m0-redaction-hardening.md)。
-已完成的 FIRST_BATCH 不重启。仓库没有可用的 FSR4 超分运行时、NPU 服务或 Decky 插件。
+**Windows，无 Odin 3；主机准备完成一轮，核心产品运行时尚未实现。** 目标意图仍是 Odin 3 / Snapdragon 8 Elite / Armada OS，实际镜像、ABI、HTP和游戏路径均未验证。没有可安装插件、已验证游戏或性能/功耗数据。
 
-## 已完成阶段：H1–H4 Windows / CPU
+| 已有成果 | 已验证范围 | 不能推出 |
+| --- | --- | --- |
+| M0采集/schema/校验/脱敏，H1–H4 | Windows fixture、合成数值、生命周期 | 真实设备采集、完整FSR或后端取消安全 |
+| P1/P2 | 隔离环境入口、外部资产核验 | 新检出自动拥有本机SDK/模型 |
+| P3/P4 | 固定QAIRT2.49.0.260730、工具冒烟、ABI候选清单 | Linux运行库可加载、FastRPC或HTP成功 |
+| P5/P6 | 自有小图ONNX→W8A8/B32→实际QNN CPU执行 | FSR转换、HTP prepare/执行 |
+| P7/P8 | 真实v07材料提取、pass0独立标量/上游CPU对照 | 完整pass1–13、FSR ONNX、官方golden等价 |
+| P9a–c | 有界资源/幂等、失败/关闭的Python状态机 | 真实GPU/NPU资源静止、持久恢复 |
 
-这是已完成的第一阶段主机准备工作，H 编号不代替 M0–M9。保留其验收范围与历史证据；后续单次开发从下面的 P 队列选择，不重启 H 项。
+H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被这个标签豁免。范围、证据和已解决历史问题见[完成项索引](roadmap/COMPLETED_HOST_BATCHES.md)。不要重启旧P队列，也不要把准备项数量换算成整体完成百分比。
 
-| 项目 | 产物与必需验收 | 依赖 | 进度 |
-| --- | --- | --- | --- |
-| H1 基线可复现 | 用仓库依赖在 Windows 运行现有 M0 unittest 和 fixture→validate→redact 最小链路；记录版本、准确命令、退出码与 skipped 原因。确保新检出无需私有目录。沿用已有工具，不重写框架 | 现有 M0 | complete |
-| H2 元数据校验 | 小型离线 manifest/tensor 校验器与合成 fixture；检查必需字段、shape/dtype/layout、容量上限及非法元数据；真实资产未知可记录，不能伪造哈希或生产可用状态。合法样例通过、畸形输入确定性拒绝 | H1 | complete |
-| H3 CPU 数值参考 | 小尺寸确定性数据，覆盖量化/反量化的舍入、饱和和误差，以及明确坐标/MV 方向的平移、重投影和 reset 样例；有独立手算/固定预期与声明容差。只验证选定算子，不称完整 FSR4 | H2 的数据约定 | complete |
-| H4 同帧生命周期回放 | 一个 Windows CPU harness 使用 H2 输入和 H3 参考算子；同 context 单请求在途，核对 session/context/frame/history/model 身份，拒绝过期输出；reset/失败不污染 history，超时保留在途资源，显式完成后才能回收；成功与错误路径有自动检查 | H2 + H3 | complete |
+## 活动任务与状态规则
 
-边界：不在本阶段加入网络 daemon、完整 NGX DLL、真实 GPU/NPU 执行、Steam 安装器、Decky UI 或游戏兼容矩阵实现。允许为现有合同写最小 CPU 验证，不提前冻结未经设备证明的最终 ABI。实际 FSR4 权重 CPU 重放需要合法资产，作为后续可选实验，不是 H1–H4 的必需项。
+下一批：**R01——修复P5导出失败清理的目录所有权竞争，并添加确定性回归。**
 
-**完成标准：** H1–H4 的实现、必需测试和短记录全部完成，实质代码/合同经过 Astra 审阅；已知仅适用 Linux/设备的检查列为后置，不能写成 pass。合成数值验证不能证明完整 FSR4、HTP 等价性、帧率、延迟或功耗收益。
+| 队列 | 当前实现状态 | 选择条件 |
+| --- | --- | --- |
+| R：审计修复、可复现性与回归 | 所有叶子项 `not_started` | 当前优先；R01起，独立项可按依赖选择 |
+| F：真实FSR CPU/ONNX/QAIRT离线 | 所有叶子项 `not_started` | 满足所选批次R修复及资产/参考依赖后选取 |
+| E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
+| D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
 
-## 当前阶段队列：P1–P9 无设备准备
+完整ID、依赖与验收只在[HOST_PREPARATION](roadmap/HOST_PREPARATION.md)和[DEVICE_EXECUTION](roadmap/DEVICE_EXECUTION.md)定义。上表是这些计划中所有叶子ID的默认实时状态；开始或完成一项时在下面增加该ID的状态/证据，覆盖组默认值，不复制整套验收文字。
 
-本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。P1–P8 与 P9a–P9c 已完成；设备与游戏仍 `not_run`。
+| 已开始的新批次 | 状态 | 证据 / 阻塞 |
+| --- | --- | --- |
+| 尚无 | — | 本轮仅整理计划，不算R/F/E/D实现 |
 
-执行约定：个人本地实验、先跑通；FSR 材料允许使用可核对内容的公开 fork/镜像，仅保留必要来源/版本/完整性记录和随包通知，不另做许可审计批次。NPU 量化目标为 W8A8，与 INT8 类型不互斥；是否转换/重新量化由实际 encoding 和工具链决定。模型/SDK 不随源码提交。
+一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
-| 批次 | 小批次产物 | 依赖/阻塞 | 进度 |
-| --- | --- | --- | --- |
-| P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | complete |
-| P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | complete |
-| P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；固定官方 2.49.0.260730 包与独立 Python 3.12 环境 | complete |
-| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2/P3；固定 QAIRT 包的 Windows、Android、Linux glibc、Hexagon V79 候选与包内缺失项已登记 | complete |
-| P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | complete |
-| P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；Windows QNN CPU 已通过，HTP prepare/执行仍后置 | complete |
-| P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；固定公开镜像与提取器，生成物仅本地保存 | complete |
-| P8 FSR 子图 CPU 对照 | 真实提取结果的 simulator/ONNX 对照与误差记录 | P7/P5；固定上游 pass-0 与独立标量参考零 LSB 对照 | complete |
-| P9a 资源预算 | 隔离资源上限、背压与完成后回收 | H4；无 SDK/模型依赖 | complete |
-| P9b 幂等保留 | 去重记录上限、过期通知拒绝与重试语义 | P9a；无 SDK/模型依赖 | complete |
-| P9c 失败/关闭 | 最小故障/关闭事件、候选 history 与迟到完成测试 | P9a/P9b；无 SDK/模型依赖 | complete |
+## 必须保留的审计欠账
 
-选取规则：优先 P1，然后按依赖选一批；资产阻塞只暂停相应分支，可继续 P4 合成部分、P5 或 P9 子批次。P1–P8 加 P9a/P9b/P9c 共 11 个单次批次。每批必须有实际实现/检查和短记录；不能以说明书或 mock 代替真实资产安装、转换或推理的验收。P 队列不包含 Linux/WSL 安装或设备部署。
+- P5导出、P6发布存在竞争失败后误删其它创建者目录的问题；修复前不要并发复用目标路径。
+- P6接受小数bitwidth和非法布尔metadata；成功路径测试未覆盖这些畸形输入。
+- M0路径检查/open竞争和公开输出中途失败残留仍未解决。
+- P6执行依赖快照/环境收据绑定不足；P7/P8来源信任与环境收据、旧artifact索引需加固。
+- P7/P9部分历史附加检查未固化；Windows symlink固定skip理由陈旧；多venv聚合检查尚未实现。
+- P3后代管道超时、P4 POSIX发布竞态及Linux特有行为仍需对应批次核查。
+- 固定SDK清单有3项包内缺件、3个超限大库未解析；实际设备匹配unknown。详细范围和修复归属见两个计划。
 
-## 当前接续点
+这些是未修问题，不因本文更新而关闭。历史下载、Python3.12/jsonschema、ONNX/protobuf缺失已解决，不继续当成当前阻塞。
 
-- H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- P1–P9 Windows 主机队列已完成；下一步保持设备门槛，连接 Odin 3 后再另批建立设备档案并验证 QNN/HTP、目标 ABI 与游戏路径。
-- 当前最新记录：[P6 QAIRT 小图 W8A8](validation/host/2026-09-22-p6-qairt-small-graph-w8a8.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
-- 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
-- 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
+## 最近验证快照与环境
 
-## 后置设备路线
+2026-09-22审计复跑：基线233项，199 pass / 34 skipped。专用环境补跑33项；剩余1项Windows固定skip由手工symlink检查补查，自动测试仍跳过。合计232个不同测试自动通过，不能写成单命令233/233。
 
-M0 仍为 `in_progress`：现有 Windows 主机证据通过，设备/游戏检查 `not_run`。
-M1–M9 仍为 `not_started`，各运行检查 `not_run`；H 队列推进不会自动改变这些门槛。
-Linux 特有 symlink、进程组、SIGALRM、真实 sysfs/权限行为留待对应环境；Odin 3 的 M0-C 建档、QNN/HTP、游戏回写、画质和性能验证留待设备阶段。
+- P3真实快照冒烟、P4真实ZIP清单、P7重新提取通过；完整QAIRT ZIP哈希匹配。
+- P5三例误差：0 / 0 / 1.1920928955078125e-07。
+- P6实际QNN CPU三例误差约0.002415 / 0.005603 / 0.007337，均小于预设0.01；实际per-tensor uFxp_8 / bias sFxp_32。
+- P8仅pass0，固定样本最大差0 LSB。设备、游戏和性能均未运行。
 
-详细技术条件按需查 [M0–M9 路线](roadmap/README.md)和[证据速查](ai/IMPLEMENTATION_GUIDE.md)；原始研究与历史报告保留原日期和结论。
+本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
+
+最近记录：[文档同步与新队列](validation/host/2026-09-22-documentation-roadmap-refresh.md)；最近实现：[P6小图W8A8](validation/host/2026-09-22-p6-qairt-small-graph-w8a8.md)。
+
+## 最终里程碑
+
+M0整体仍 `in_progress`，缺真实设备建档/基线冻结；M1–M9运行时实现仍 `not_started`。H/P准备成果不自动通过M节点。硬件主线是M0→M1→M2，游戏分支M0→M3，两支汇合M4，再到M5/M6及M7/M8；M9为按需兼容扩展。
+
+详见[里程碑技术索引](roadmap/README.md)。当前只默认推进R/F/E；接入设备后按D叶子批次逐步取得device/game证据。

@@ -1,8 +1,8 @@
 # M0：设备、系统与兼容栈建档
 
-状态：**进行中；M0-A/M0-B 的主机侧 schema、采集、校验、脱敏与 fixture 已实现，M0-C/M0-D 的 Odin 3 实测和基线冻结尚未执行。** 本文仍是实施路线，不是 Odin 3 实测报告。上一节点：无；下一节点：[M1 NPU 平台闸门](M1-npu-platform.md)。
+状态：**M0 整体 `in_progress`；主机工具已有历史证据，真实设备部分 `not_run`。** 实施只从 [D01–D05](DEVICE_EXECUTION.md#m0真实设备与-linux-基线) 选择一个小批次；这些批次的执行条件需要目标设备，实时状态只看 STATUS。本文保留技术依据，不作为第二套队列，也不整体重开 M0-A–M0-D。
 
-执行前阅读 [AI 实施总则](../ai/IMPLEMENTATION_GUIDE.md)、[共享合同](../architecture/CONTRACTS.md) 和 [项目状态](../STATUS.md)。历史判断保留在 [2026-09-20 可行性研究](../reference/2026-09-20-feasibility.zh-CN.md)，新的实测结论应单独记录，不改写历史证据。
+[D 执行队列](DEVICE_EXECUTION.md) · [项目状态](../STATUS.md) · [共享合同](../architecture/CONTRACTS.md) · [历史研究](../reference/2026-09-20-feasibility.zh-CN.md)。新的实测结论写入所选 D 批的一份短记录，不改写历史证据。
 
 ## 1. 本节点交付什么
 
@@ -182,8 +182,8 @@ M0 通过最低要求：真实目标设备档案可追溯；硬件族、镜像/�
 
 遇到设备型号与用户描述不符、来源不明的镜像/固件、需要写设备树或刷写才能继续时暂停相关分支，提出可审阅的问题和证据。游戏未确定不属于平台暂停点。
 
-交接按 [交接模板](../templates/handoff.md) 填写：工具 commit、`device_profile_id`、原始输出位置/摘要、运行位置（host/容器）、权限不足项、未安装组件、候选游戏、基线配置备份位置、M1 可以直接开始的动作。实际运行时创建 `docs/validation/M0/YYYY-MM-DD-<work-package>.md` 和对应 `-handoff.md`；验收记录使用 [验证报告模板](../templates/validation-report.md)，不得复制本文件的示例作为实际证据。
+所选 D 批只需一份短记录，包含工具 commit、`device_profile_id`、原始输出索引、真实运行位置、权限/未知项、gate 与下一步；不再强制另建 validation 和 handoff 两份文件。
 
-## 10. 可复制给下一位 AI 的任务提示词
+## 10. 旧执行提示（停用）
 
-> 请实现 M0 设备建档，先读本文件、docs/ai/IMPLEMENTATION_GUIDE.md、docs/architecture/CONTRACTS.md 和 docs/STATUS.md。先检查仓库已有实现，避免重复新建框架。范围只包括普通用户的只读采集、schema、脱敏及必要的解析测试，不安装软件、不修改系统、不刷机、不复制 DLL。为未知字段保留 null 与原因；区分 host/guest/PE 架构，不把 Armada 源码支持等同于实机支持。每批先列输出，再实现并验证，保存命令、退出码、版本和证据等级。若没有设备，交付可执行采集器和模拟输入测试，但 device_test 必须 not_run。候选游戏未定不能阻塞 M1 的平台诊断。完成后更新项目状态并按交接模板列出 M1 所需材料、已知阻塞和最小下一步，不自行进入刷机或 NPU 解锁工作。
+> 原可复制提示已停用；它会整体启动 M0 并重复主机工作。只从 [D01–D05](DEVICE_EXECUTION.md#m0真实设备与-linux-基线) 选择一项，技术约束以上文为准。

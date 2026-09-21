@@ -2,6 +2,8 @@
 
 状态：**draft-0，设计提案，不是已实现、已冻结的 ABI 或协议**。本文件是各节点共享语义的起点。字段样例不代表设备信息、模型生成结果或实测数据；实施时先定义 schema 和测试，再由一次配套变更固定版本。
 
+2026-09-22接续说明：已落地部分限于M0 schema及H/P合成合同；正式帧协议、真实模型装载和GPU/HTP生命周期未实现。本轮文档重构不改变下文合同语义。具体下一批以[STATUS](../STATUS.md)、[无设备计划](../roadmap/HOST_PREPARATION.md)和[设备计划](../roadmap/DEVICE_EXECUTION.md)为准，不能由示例推断生产能力。
+
 [实施指南](../ai/IMPLEMENTATION_GUIDE.md) · [节点路线](../roadmap/README.md) · [状态页](../STATUS.md)
 
 ## 1. 模块边界

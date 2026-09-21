@@ -3,11 +3,11 @@
 > 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
 
 > 用于给单个开发 worker 分配一个小而可验证的工作包。删除提示文字后使用。
-> worker 只在授权路径内写入；共享 `docs/STATUS.md`、公共合同和公共 README 由唯一 integrator 汇总。
+> worker 只在授权路径内写入；共享 `docs/STATUS.md`、公共合同由唯一 integrator 汇总，公共 README 可显式分配。交接默认用消息，只有协调者明确需要时才生成本模板的可选文件。
 
 ## 1. 身份
 
-- 工作包 ID：`<里程碑-简短编号>`
+- 工作包 ID：`<当前计划中的R/F/E/D叶子ID；不要用整个M里程碑代替>`
 - 标题：`<单一、可验证的结果>`
 - Owner：`<worker 名称>`
 - 实际模型：`<宿主实际返回的模型名；不可见时填 unknown>`
@@ -16,18 +16,18 @@
 - Base SHA：`<完整提交 SHA；共享工作区另记快照时间>`
 - 目标里程碑：`<Mx>`
 - 预计交付：`<日期或依赖满足后>`
-- 唯一 handoff 路径：`<docs/validation/Mx/YYYY-MM-DD-<work-package>-handoff.md>`
+- 可选 handoff 路径：`<仅明确需要独立文件时填写，否则用返回消息>`
 
 ## 2. 范围与写入边界
 
 ### 只允许写入的精确路径
 
 - `<path/to/file-or-owned-directory>`
-- `<docs/validation/Mx/YYYY-MM-DD-<work-package>-report.md>`（本 worker 唯一报告路径）
-- `<docs/validation/Mx/YYYY-MM-DD-<work-package>-handoff.md>`（与身份栏一致的唯一交接路径）
+- `<可选报告路径；默认由integrator统一写一份batch-note>`
+- `<可选handoff路径；未指定不额外创建>`
 
 除上述路径外不得修改文件。不得修改共享 `docs/STATUS.md`、
-`docs/architecture/CONTRACTS.md`、公共 README 或其他 worker 的报告；需要变更时升级给 integrator。
+`docs/architecture/CONTRACTS.md`、未明确分配的公共 README 或其他 worker 的报告；需要变更时升级给 integrator。
 
 ### 起始读取参考
 
@@ -59,8 +59,8 @@
 ### 输出
 
 - `<代码/测试/文档的精确路径及行为>`
-- `<唯一验证报告路径；只链接日志或大工件，不复制长报告>`
-- `<唯一 handoff 路径；简要索引结果、证据和下一步>`
+- `<返回消息或明确需要的验证报告；只索引日志和结果>`
+- `<可选handoff；不要重复batch-note中的内容>`
 
 ## 4. 必须保持的不变量
 

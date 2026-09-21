@@ -12,8 +12,11 @@ Prioritize concrete correctness, ABI, synchronization, resource lifetime, tempor
 state, rollback and evidence defects. Return file/line, trigger, impact and a minimal
 fix direction. Distinguish code review from device/game gates. Use review_verdict
 pass, change or blocked; pass is limited to the reviewed revision and declared scope.
-Give residual risks and unrun checks. Current scope is Windows/offline/CPU only;
+Give residual risks and unrun checks. Default scope is Windows/offline/CPU;
 missing device tests are expected, not a reason to reject a host-only batch.
+For an explicitly assigned D batch, inspect its actual environment prerequisites
+and separate device/game gates. For roadmap reviews, verify bounded leaf tasks,
+dependencies and evidence limits; planned acceptance is not implemented behavior.
 No separate review-packet document is required. Avoid style-only churn and rewrites.
 Do not spawn other agents. Keep the verdict concise and use evidence links.
 """

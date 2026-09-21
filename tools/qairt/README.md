@@ -17,11 +17,13 @@ explicitly provenance metadata, not a SHA-256 digest.
   --archive downloads/qairt-community-2.49.0.260730.zip `
   --sdk-root sdks/qairt/2.49.0.260730 `
   --python local/venvs/qairt-2.49.0.260730/Scripts/python.exe `
-  --output artifacts/P3/qairt-2.49.0.260730-host-probe.json
+  --output artifacts/P3/qairt-2.49.0.260730-host-probe-YOUR-NEW-RUN-ID.json
 ```
 
 The output is created atomically and an existing destination is never
 overwritten. SDK paths and the output parent must not traverse reparse points.
+The output parent must already exist; use a new receipt filename for every run
+and verify its archive/SDK hashes before relying on it.
 The child environment removes inherited vendor SDK variables, then supplies
 only the pinned SDK roots, SDK Python/library/tool paths, venv Scripts,
 `VIRTUAL_ENV`, and UTF-8 controls. The parent environment is unchanged.
@@ -45,7 +47,7 @@ integration. CPU and HTP files are only offline-inspected candidates. The
 inspector's 16-MiB safety limit; bounded `QnnHtpNetRunExtensions.dll` supplies
 the fourth x86-64 PE candidate.
 
-## P5 small-graph W8A8 pipeline
+## P6 small-graph W8A8 pipeline
 
 `small_graph_pipeline.py` consumes only explicit SDK, interpreter, model,
 work, output, and P3-receipt paths. The work and output roots must not already
@@ -58,8 +60,8 @@ are written into the QAIRT calibration list. For example:
   --qairt-python local/venvs/qairt-2.49.0.260730/Scripts/python.exe `
   --reference-python local/venvs/reference/Scripts/python.exe `
   --model tools/reference/fixtures/conv_add_relu.onnx `
-  --work-root artifacts/P6-work `
-  --output-root artifacts/P6 `
+  --work-root artifacts/P6-work-YOUR-NEW-RUN-ID `
+  --output-root artifacts/P6-result-YOUR-NEW-RUN-ID `
   --p3-receipt artifacts/P3/qairt-2.49.0.260730-final-host-probe.json
 ```
 
@@ -70,3 +72,24 @@ only after all three CPU outputs pass the predeclared `atol=0.01, rtol=0`
 comparison. Failures preserve the work directory and logs but do not publish a
 success output. HTP execution, device, FSR, and game validation remain
 `not_run`.
+
+The two parent directories must already exist; both selected roots must be new,
+and the absolute work path must contain no whitespace. The pipeline does not
+install the QAIRT or reference dependencies, so both explicit interpreters must
+already be provisioned. After success, verify `success_receipt.json` and its
+bound file hashes before retaining the result.
+
+Known issues: concurrent runs sharing the same output name can race through the
+common `.publishing` path and one failure may delete the other run's staging
+directory. Metadata validation also currently accepts some malformed bitwidth
+and boolean representations. Until those defects are fixed, use a unique work
+and output name per run, do not run two jobs against the same target, and do not
+treat acceptance of hand-edited encoding JSON as trustworthy evidence.
+
+The P6 success receipt hashes the selected interpreter executables, scripts,
+inputs, logs, and outputs, but it does not bind the complete installed Python
+package closure or every expanded SDK dependency. P3's probe executes an
+archive-derived private snapshot; P6 instead invokes tools and libraries from
+the explicitly selected expanded SDK root. Do not infer that a P3 snapshot
+receipt alone reproduces P6. Closing that environment/receipt binding is still
+an R-series hardening task.

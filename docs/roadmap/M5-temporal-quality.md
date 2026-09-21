@@ -1,13 +1,13 @@
 # M5 · 时序画质、历史状态与恢复
 
-本节点验证连续游戏帧的语义是否正确：快速转动、遮挡显露、场景切换、曝光变化和恢复操作后，结果是否仍然对应当前场景。它继承 M4 的同帧复制基线，不能用异步旧帧输出掩盖画质或延迟问题。当前没有本项目实机画质或稳定性结果。
+状态：**`not_started`；真实设备、游戏、画质与稳定性 gate 均 `not_run`。** 实施只从 [D28–D29](DEVICE_EXECUTION.md#m5时序画质与恢复) 选择一个小批次。本节点验证连续游戏帧的语义是否正确，继承 M4 同帧复制基线；技术正文不作为第二套队列。
 
 - 前置依赖：M4 固定 profile 的真实 HTP/游戏闭环与故障控制已通过。
 - 交付：可重放场景集、字段映射表、历史状态机、逐阶段/连续帧画质报告，以及 `docs/validation/M5/YYYY-MM-DD-<work-package>.md`。
 - 范围：一个已验证游戏/API/固定分辨率 SDR profile；更换模型、量化、着色器或关键映射必须重新验收。
 - 默认建议：一次至少 30 分钟的连续稳定试验，并覆盖可重复的切场景、暂停恢复、重连与重新创建；这只是起始门槛，不代表完整可靠性认证。
 
-共同规则见[AI 实施规则](../ai/IMPLEMENTATION_GUIDE.md)、[跨组件合同](../architecture/CONTRACTS.md)与[项目状态](../STATUS.md)。文中字段为拟议 `draft-0` 合同，未冻结 ABI。
+[D 执行队列](DEVICE_EXECUTION.md) · [跨组件合同](../architecture/CONTRACTS.md) · [项目状态](../STATUS.md)。文中字段为拟议 `draft-0` 合同，未冻结 ABI。
 
 ## 1. 目标与禁止混淆的结论
 
@@ -184,11 +184,13 @@ history/recurrent 与其上一帧 metadata 由同一 context 所有；执行尚�
 
 无设备时可以完成状态机、生成器、重放格式、字段映射审查、数值比较和故障测试；如果只有 CPU/reference，则只能记录对应 evidence。不能宣称 Snapdragon HTP 数值一致、真实游戏动态画质可接受或 30 分钟实机稳定。
 
-按[验收报告](../templates/validation-report.md)、[交接记录](../templates/handoff.md)和需要的[ADR](../templates/adr.md)交付：场景索引/哈希、manifest、映射表、误差阈值与理由、最差片段、reset 日志、缺陷分级、稳定试验数据及恢复步骤。报告保存为 `docs/validation/M5/YYYY-MM-DD-<work-package>.md`，交接为同名 `-handoff.md`。
+所选 D 批用一份短记录保存场景索引/哈希、manifest、映射表、阈值与理由、最差片段、reset 日志、缺陷分级、稳定试验数据及恢复步骤；只有必要决策另写 ADR，不再强制独立 handoff。
 
 移交 M6 时锁定已通过的画质 profile，说明哪些优化会触发重验：流水改变、精度/量化、颜色格式、history 布局、MV/jitter/exposure 转换、模型/着色器版本。不能在性能分支中静默降低画质后仍沿用 M5 结论。
 
-## 10. 可直接复制给编码 AI 的提示词
+## 10. 旧执行提示（停用）
+
+> 下列历史提示不得再用于整体启动 M5；当前只从 [D28–D29](DEVICE_EXECUTION.md#m5时序画质与恢复) 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 请实施 M5 时序画质与恢复。先读 docs/STATUS.md、docs/ai/IMPLEMENTATION_GUIDE.md、

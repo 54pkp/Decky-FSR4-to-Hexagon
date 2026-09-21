@@ -1,26 +1,38 @@
-# 证据速查与按需参考
+# 证据速查与接续指南
 
-日常流程只看 [轻量流程](MULTI_AGENT_WORKFLOW.md) 和 [STATUS](../STATUS.md)。本页不再重复派工、审阅和交接步骤。旧路线中的多份模板要求由轻量流程替代；历史实验本身保持原样。
+[文档地图](../README.md) · [STATUS](../STATUS.md) · [协作流程](MULTI_AGENT_WORKFLOW.md)
+
+## 先判断你在查什么
+
+- 做下一批：STATUS → [无设备计划](../roadmap/HOST_PREPARATION.md)或[设备计划](../roadmap/DEVICE_EXECUTION.md)中的具体 ID → 相关源码/测试。
+- 找已完成内容：[H/P 历史索引](../roadmap/COMPLETED_HOST_BATCHES.md) → 对应日期记录。历史 complete 不表示新审计问题已修复。
+- 跑现有工具：对应 `tools/**/README.md`，使用明确环境；不要直接把 roadmap 中的拟议命令当成现成入口。
+- 改公共语义：[CONTRACTS](../architecture/CONTRACTS.md)相关段落；目前总体仍 draft-0，配套同步生产者/消费者/测试。
+- 查技术依据：[M0–M9](../roadmap/README.md)与[原始研究](../reference/README.md)，按需读取，不重复全仓研究。
 
 ## 什么算验证
 
 | evidence_level | 可以证明 | 不能证明 |
 | --- | --- | --- |
-| source_review | 固定来源下的实现或理论推导，含假设 | 编译、CPU 运行或设备成功 |
-| build | 指定工具链能生成产物 | ARM Linux 可加载、HTP 可执行 |
-| host_test | Windows CPU、合成输入或 mock 的实际行为 | FSR4 HTP、游戏兼容、设备性能 |
-| device_test | 指定设备/系统的实测 | 所有游戏可用 |
-| game_test | 指定游戏/API/兼容栈/模型组合的实测 | 其它组合自动通过 |
+| source_review | 指定版本的实现、理论或文档一致性 | 已编译或运行成功 |
+| build | 指定工具链产出文件 | 目标设备加载、真实HTP执行 |
+| host_test | Windows CPU、fixture/mock的实际行为 | 完整FSR4、设备/游戏兼容或收益 |
+| device_test | 指定设备/镜像/后端实测 | 所有游戏或其它系统自动通过 |
+| game_test | 指定游戏/build/API/兼容栈/模型实测 | 其它组合自动通过 |
 
-单项 `gate`：`not_run / pass / fail / blocked`。实现进度：`not_started / in_progress / blocked / complete`。记录 skipped 和原因，不能折算成 pass。当前所有设备与游戏测试保持 `not_run`；H 阶段 complete 仅指主机范围，不替代 M 节点验收。
+检查 gate：`not_run / pass / fail / blocked`。实现进度：`not_started / in_progress / blocked / complete`。计划中的“待设备/待依赖”是选择条件，不自动等于执行失败或blocked；只有已尝试且必需条件缺失时记录具体阻塞。没有实现不写“已实现未测”，没有实际数据不填0。
 
-理论记录写清来源版本、假设、推导及尚未运行项。CPU 数值实验写清输入构造、公式/坐标约定、独立预期、容差和实际误差；不能调用被测实现来重新计算唯一的预期结果。合成算子测试不等于完整 FSR4 CPU 推理，更不等于 HTP 数值等价。真实模型可用后再固定版本、许可、输入与输出哈希，单列对照实验。
+- skipped 必须给原因，不算 pass。跨venv补测要按不同测试去重，保留原命令的跳过数量。
+- 基线环境不包含全部NumPy/ONNX/QAIRT依赖；当前多环境命令见[环境入口](../../tools/host/README.md)，统一聚合仍属待办。
+- P5/P6证明自有小图；P6实际后端是QNN CPU。P7是提取；P8仅固定pass0的两种CPU实现对照，没有完整FSR ONNX或pass1–13验收。
+- W8A8说明位宽，不与signed INT8互斥；记录实际signedness、scale/offset convention、量化粒度与外部I/O。传入HTP参数不等于HTP执行。
+- 数值实验固定来源、输入、独立预期、事先容差、实际误差和输出哈希；两实现共享权重来源时明确局限。没有官方golden就不能证明官方等价。
+- timeout、failure或close不证明真实后端已经停止；合成生命周期通过不证明GPU/NPU释放安全。
 
-## 用到再读
+## 最小证据包
 
-- [公共合同](../architecture/CONTRACTS.md)：只读本批相关字段；草案不是现成 ABI，修改时同步生产者、消费者与测试。
-- [M0–M9 详细路线](../roadmap/README.md)：未来设备/API/部署的参考，当前不逐项实施。
-- [历史研究](../reference/README.md)、[已完成首批](FIRST_BATCH.md)：追溯来源，不重新执行。
-- [短批次记录](../templates/batch-note.md)：日常唯一模板。目录内其它模板保留供复杂实验选用。
+一个[短批次记录](../templates/batch-note.md)：ID、目标、base/diff身份、实际模型参数、实际环境/backend、完整命令/退出码、输入输出来源/重要哈希、审阅、失败/skips/未测和下一步。原始大日志、SDK、权重放忽略目录；可共享文档不能只依赖某人的绝对路径或未提交审计文件才能理解结论。
 
-不预先创建全套 runtime、adapter、Decky、安装器空目录。先有一个可测使用者，再增加模块。`research/`、`.research-notes/`、SDK 和模型目录不随仓库分发，不能成为新电脑启动的隐式依赖。
+已有资产只在当前本地部署；新检出先核验，缺输入不伪造哈希、不自动覆盖现有venv。历史下载/包依赖问题若已解决，不重复列为阻塞；尚存风险要链接到具体新批次。
+
+不预建整套空runtime/adapter/Decky目录。先定义一个可测使用者再增加模块。设备和游戏门槛始终独立；规划完成不代表实现完成。

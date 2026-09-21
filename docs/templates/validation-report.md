@@ -2,7 +2,7 @@
 
 > 可选详细模板，留待复杂实验使用。当前 Windows/CPU 批次只用 [batch-note](batch-note.md)，不要求按本模板额外生成文件。
 
-这是模板，不是真实测试结果。复制到 `docs/validation/Mx/YYYY-MM-DD-<work-package>.md`，替换所有占位内容；未运行项保留 `not_run`。原始数据放忽略目录，不把本模板本身作为验收证据。
+这是模板，不是真实测试结果。需要详细报告时，主机批次使用 `docs/validation/host/YYYY-MM-DD-<batch>.md`，设备批次使用对应 `docs/validation/Mx/`；沿用本批唯一记录，不另复制一份。替换占位内容，未运行项保留 `not_run`。原始数据放忽略目录，模板本身不是验收证据。
 
 ## 基本信息
 

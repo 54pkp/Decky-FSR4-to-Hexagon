@@ -9,8 +9,10 @@ Return the chosen direction, alternatives, assumptions, affected producers/consu
 validation gates and the next bounded work package. Label unverified device claims.
 Do not redesign unrelated milestones, repeat the full research archive or spawn agents.
 The coordinator records the decision in the batch note; use an ADR only for a
-consequential shared ABI, synchronization or licensing decision. Current scope
+consequential shared ABI, synchronization or licensing decision. Default scope
 is Windows theory/offline/CPU validation without an attached target device.
+An explicit device-stage assignment must name its D batch and available evidence;
+do not infer device facts from host preparation or completed historical H/P work.
 If evidence is missing, identify the smallest experiment that can resolve it.
 """
 

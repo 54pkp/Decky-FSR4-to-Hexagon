@@ -18,7 +18,7 @@ or other reparse point.
   --sdk-root C:\path\to\FidelityFX-SDK `
   --extractor C:\path\to\fsr4-hexagon\model\extract\build_weights.py `
   --python C:\path\to\python-with-numpy.exe `
-  --output artifacts\p7-fsr-v07
+  --output artifacts\p7-fsr-v07-YOUR-NEW-RUN-ID
 ```
 
 Only `fsr4_quality_weights.npz`, `graph_spec.json`, and
@@ -49,7 +49,7 @@ a finite non-zero value.
 .\local\venvs\fsr-extract\Scripts\python.exe tools/fsr/pass0_check.py `
   --p7-directory artifacts/p7-fsr-v07-accepted `
   --simulator research/fsr4-hexagon/model/sim/fsr4_sim.py `
-  --output artifacts/p8-pass0-receipt.json
+  --output artifacts/p8-pass0-YOUR-NEW-RUN-ID-receipt.json
 ```
 
 The JSON receipt is published only after all checks pass and an existing output
@@ -57,3 +57,16 @@ is never replaced. It records layouts, shape/dtype, quantization scale,
 input/output hashes, and the measured/tolerated LSB difference. This is only a
 host CPU cross-check of pass-0 using the same fixed public weight source. It is
 not an official golden, complete FSR4, ONNX, QNN/HTP, device, or game result.
+
+The output parent must already exist and every run must use a new `.json` path.
+Do not use or overwrite the local legacy
+`artifacts/p8-pass0-receipt.json`: it is an older intermediate receipt with a
+different tolerance and fewer gates. The audited current P8 receipt has SHA-256
+`4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6`;
+recompute the selected P7 receipt, weights, graph, simulator, and new output
+hashes rather than trusting a filename.
+
+`pass0` is only the FP16 eight-channel preprocessing convolution that produces
+the INT8 16-channel network input. The simulator's pass1–13 graph is not invoked
+by this tool. The P7 NPZ/graph are extracted weights and graph description, not
+an ONNX model or a complete executable FSR4 package.

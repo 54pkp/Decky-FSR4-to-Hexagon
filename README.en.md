@@ -2,53 +2,49 @@
 
 [中文](README.md) | English
 
-This project explores running **FSR4 neural inference on Qualcomm Hexagon NPUs** in Snapdragon Linux handhelds, while the GPU handles feature preparation, temporal processing, reconstruction, and writeback. The first research target is **AYN Odin 3 / Snapdragon 8 Elite / Armada OS**, initially through a game's DLSS Super Resolution interface, with Steam and an optional Decky management UI considered later.
+This project studies running an FSR4 neural-network partition on a Qualcomm Hexagon NPU in a Snapdragon Linux handheld, with the GPU responsible for features, temporal processing, reconstruction, and writeback. The first target remains AYN Odin 3 / Snapdragon 8 Elite / Armada OS.
 
-> **Current stage: only M0 host tools, synthetic CPU references/replay tools, and design documents exist; there is no upscaling runtime.**
-> No Odin 3 is connected or tested. Current evidence is limited to Windows, anonymous fixtures, offline checks, and CPU host tests. There is no installable plugin, validated game, HTP/QNN NPU result, or performance data, so this project cannot claim that FSR4 works on a Hexagon NPU.
+> This is currently a Windows host-preparation and offline-validation project, not a usable upscaler. No Odin 3 has been connected, and there is no complete FSR4 path, HTP execution, GPU pipeline, game adapter, deployment tool, or Decky plugin. [STATUS](docs/STATUS.md) is the only authoritative current-status page.
 
-## What exists
+## Evidence available today
 
-- A `draft-0` device-profile schema.
-- `tools/device/collect.py`, a read-only unprivileged Linux collector that does not install software, elevate privileges, modify firmware, unlock hardware, or open a DSP session.
-- `tools/device/profile_tools.py` for offline profile validation and public redaction.
-- Synthetic-only manifest validation, affine-int8, and integer-grid spatial references under `tools/model/`.
-- Synthetic CPU lifecycle replay under `tools/replay/`, complete within H4's scope: identity, consumption acknowledgement, timeouts, and generation isolation. Real backend resources and recurrent history are not implemented.
-- Anonymous fixtures and device/model/replay Python regression tests that run on Windows.
+- M0 host-side device-profile schema, a read-only Linux collector, offline validation/redaction, and synthetic numerical and lifecycle replay tools.
+- A locally pinned official QAIRT Community 2.49.0.260730 package and isolated environment. The repository-owned `Conv -> Add -> ReLU` graph has completed real W8A8/B32 conversion, metadata checks, and a Windows QNN CPU comparison. It is not FSR4, and the target HTP backend was not executed.
+- Five public FSR v07 `i8_quality` source files have been verified and extracted into a 100-array NPZ plus graph spec. P8 only compared the fixed small-sample preprocessing `pass0` convolution with an independent scalar CPU implementation at zero LSB. Passes 1–13, FSR ONNX/QDQ, DLC, a v79 context, an official golden, and GPU/HTP execution remain undone.
+- The 2026-09-22 audit baseline command ran 233 tests: 199 passed and 34 skipped. Three dedicated environments ran 33 of those skipped tests, and the remaining behavior received one manual check. This is not a single automatic 233/233 result.
 
-These tools establish device facts and test file-handling boundaries. They do not implement FSR4 model execution, a GPU/NPU graphics pipeline, game integration, a launcher, or a Decky plugin. The NPU would also perform only part of the complete upscaling algorithm.
+Local SDKs, models, and generated artifacts stay in Git-ignored directories and are not distributed with the source. STATUS links to the fixed asset digests and batch evidence.
 
-## Windows host check
+## Windows quick check
 
-Python 3.10+ is required. From the repository root, run:
+Select an explicit Python 3.10+ executable and run from the repository root:
 
 ```powershell
-# Select the full path of a Python 3.10+ executable; no py launcher or guessed path
 $python = 'C:\Path With Spaces\Python312\python.exe'
 & $python tools/host/environment.py check --python $python
 & $python tools/host/environment.py init --python $python --venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-The entry point reports AMD64/ARM64 architecture, verifies `pip`, installs the baseline requirements, and refuses to overwrite any existing target. For an existing `.venv`, do not run `init` again; inspect it without modification with `& .\.venv\Scripts\python.exe tools/host/environment.py check --python .\.venv\Scripts\python.exe`. See [`tools/host/README.md`](tools/host/README.md) for details.
+`init` only creates a new target and attempts to install the pinned baseline requirements. It does not guarantee that a package cache or network is available, and it does not provision the dedicated QAIRT, ONNX Runtime, or NumPy environments. Do not initialize over an existing `.venv`; use its interpreter for the read-only `check`. See the [host environment guide](tools/host/README.md).
 
-This unified device-free check validates only the Python tools, synthetic CPU references, and fixture behavior. It is not Odin 3, CDSP/FastRPC, HTP, complete FSR4, or game validation. Live device collection is Linux-only; see [`tools/device/README.md`](tools/device/README.md).
+## Documentation entry points
 
-## Development entry points
-
-- [Current status and work queue](docs/STATUS.md)
-- [Device-free phase two: FSR/QNN assets, environments, and batch plan](docs/roadmap/HOST_PREPARATION.md) (11 single-run batches; SDK installation and real model acquisition have not started)
+- [Documentation map](docs/README.md)
+- [Sole current status](docs/STATUS.md)
+- [Device-free R fixes, F real-FSR offline work, and E engineering candidates](docs/roadmap/HOST_PREPARATION.md)
+- [Device D batches](docs/roadmap/DEVICE_EXECUTION.md)
+- [Closed H/P host batches](docs/roadmap/COMPLETED_HOST_BATCHES.md)
 - [Lightweight collaboration rules](docs/ai/MULTI_AGENT_WORKFLOW.md)
-- [Single-run prompt](docs/ai/SINGLE_RUN_PROMPT.md)
-- [Resumable Goal prompt](docs/ai/GOAL_PROMPT.md)
 
-Consult the [detailed roadmap and research entry point](docs/roadmap/README.md) only when implementing a specific milestone. Always distinguish source review, compilation, host tests, device tests, and game tests.
+## Current operational warnings
+
+- P5 export and P6 publication have reproduced concurrent-cleanup ownership defects. Until fixed, never run two tasks against the same target or publication name; use a fresh, exclusive directory for every run.
+- M0 still has check-then-replace path races and can leave partial redaction output after a failure. Do not run it in an untrusted directory or treat failed output as publishable.
+- Every artifact-producing command should use a new path. Recheck input and output SHA-256 values against its receipt afterward. Device, game, performance, and quality conclusions remain `not_run`.
 
 ## Upstreams and license boundaries
 
-- [fsr4-hexagon](https://github.com/puzzled-pancake/fsr4-hexagon): FSR4/Hexagon experiments and model-porting research.
-- [rp6-npu-unlock](https://github.com/puzzled-pancake/rp6-npu-unlock): NPU research for a specific RP6 platform, not an Odin 3 installation procedure.
-- [drewano/hexscale](https://github.com/drewano/hexscale): Vulkan, QNN service, and diagnostics reference.
-- [54pkp/hexscale](https://github.com/54pkp/hexscale): related QNN and management-tool reference.
+Primary research references include [fsr4-hexagon](https://github.com/puzzled-pancake/fsr4-hexagon), [rp6-npu-unlock](https://github.com/puzzled-pancake/rp6-npu-unlock), and [hexscale](https://github.com/drewano/hexscale). Upstream experiments do not replace device or game validation here.
 
-This repository's license has not been selected. AMD models, Qualcomm SDK/runtime components, firmware, game files, and upstream code remain under their own terms. This repository does not distribute those proprietary assets and is not an official AMD, Qualcomm, NVIDIA, Valve, AYN, or Decky project. Upstream experiments do not replace device or game validation here.
+This repository's license has not been selected. AMD models, Qualcomm SDK/runtime components, firmware, game files, and upstream code remain under their own terms. This repository does not distribute those proprietary assets and is not an official AMD, Qualcomm, NVIDIA, Valve, AYN, or Decky project.

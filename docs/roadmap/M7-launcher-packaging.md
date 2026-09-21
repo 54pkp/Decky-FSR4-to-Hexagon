@@ -1,8 +1,8 @@
 # M7：CLI、启动器与可恢复部署
 
-> 状态：路线设计；`fsr4hex-run`、`fsr4hexctl`、`fsr4hex-daemon` 均为拟议名称，当前不是可安装命令。
+> 状态：**`not_started`；真实部署与游戏 gate 均 `not_run`。** 实施只从 [D32、D33a–D33c](DEVICE_EXECUTION.md#m7cli-与可恢复部署) 选择一个小批次；均需要目标设备，D33a/D33c 还需要游戏。无设备部署事务 fixture 属于 [E06a–E06c](HOST_PREPARATION.md#e协议与主机工程准备)。`fsr4hex-run`、`fsr4hexctl`、`fsr4hex-daemon` 均为拟议名称，当前不是可安装命令。
 
-先读 [AI 实施指南](../ai/IMPLEMENTATION_GUIDE.md)、[公共合同](../architecture/CONTRACTS.md)、[项目状态](../STATUS.md) 与 [归档研究](../reference/2026-09-20-feasibility.zh-CN.md)。本节点把已验证链路变成可重复操作，不把“文件放好了”当成 NPU 已工作。
+[D 执行队列](DEVICE_EXECUTION.md) · [公共合同](../architecture/CONTRACTS.md) · [项目状态](../STATUS.md) · [归档研究](../reference/2026-09-20-feasibility.zh-CN.md)。本节点把已验证链路变成可重复操作，不把“文件放好了”当成 NPU 已工作；技术正文不作为第二套队列。
 
 ## 1. 目标与非目标
 
@@ -139,9 +139,11 @@ fsr4hex-run --profile <verified-profile> -- <original-command> [args...]
 - 没有实际设备时后两项保持 `not_run`；每个 gate 限 `not_run` / `pass` / `fail` / `blocked`。
 - M7 完成不自动发布“推荐模式”；该标记必须引用 M5/M6 同组合证据。
 
-## 9. 交接与 AI 提示词
+## 9. 批次记录与旧提示
 
-交接包含 CLI/API schema、退出码、示例 plan/journal、XDG 布局、路径/所有权规则、升级矩阵、未解决冲突、实际包清单及 [验证报告](../templates/validation-report.md)。报告写入 `docs/validation/M7/YYYY-MM-DD-<work-package>.md`，交接为同名 `-handoff.md`。M8 必须复用这些操作，不能另写第二套安装器。
+所选 D 批用一份短记录保存 CLI/API schema、退出码、示例 plan/journal、XDG 布局、路径/所有权规则、升级矩阵、冲突和实际包清单，不再强制独立 handoff。M8 必须复用这些操作，不能另写第二套安装器。
+
+> 下列历史提示不得再用于整体启动 M7；当前只从 D32、D33a、D33b、D33c 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 实施 M7 的一个批次。先读 AI 指南、公共合同、本路线及 M4/M5/M6 实际证据。

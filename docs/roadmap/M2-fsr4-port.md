@@ -1,8 +1,8 @@
 # M2：FSR4 v07 / HTP v79 离线移植与连续帧重放
 
-状态：**未实现、未进行目标设备验证。** 前置：[M1 NPU 平台闸门](M1-npu-platform.md)。本节点输出供 M4 集成，游戏接口探针 M3 可并行研究。
+状态：**`not_started`；目标设备 gate `not_run`。** 实施只从 [D12–D18](DEVICE_EXECUTION.md#m2完整-fsr4-模型gpu-流水与离线序列) 选择一个小批次；D12–D13 必须已有真实设备资料，D13 可在 host 生成 context，但不证明设备执行；D14–D18 需要真实设备。无设备准备按 [F 队列](HOST_PREPARATION.md#f真实-fsr-离线分支) 单独验收。前置为 [M1](M1-npu-platform.md)，M3 可并行。本文保留技术依据，旧 M2-A–M2-F 不作为活动批次。
 
-开始前阅读 [AI 实施总则](../ai/IMPLEMENTATION_GUIDE.md)、[共享合同](../architecture/CONTRACTS.md)、[历史可行性研究](../reference/2026-09-20-feasibility.zh-CN.md)。必须区分“复现上游重建的 W8A8 研究路径”和“与 AMD 官方完整 FSR4 实现等价”。本节点不承诺后者。
+[D 执行队列](DEVICE_EXECUTION.md) · [共享合同](../architecture/CONTRACTS.md) · [历史研究](../reference/2026-09-20-feasibility.zh-CN.md)。必须区分“复现上游重建的 W8A8 研究路径”和“与 AMD 官方完整 FSR4 实现等价”；本节点不承诺后者。
 
 ## 1. 目标与非目标
 
@@ -189,10 +189,10 @@ M2 通过必须具备：有效 M1 报告；完整且可验证的模型 manifest�
 
 以下情况暂停移植宣告：拿不到合法模型材料、SDK/HTP 不匹配、quant encoding 缺失、dummy 输出混淆、CPU 回退、序列历史泄漏、显著错误无法定位。缺少官方 FP16 对照只限制等价性声明；不得将自建 INT8 对照通过写成官方质量等价。
 
-## 9. 交接记录与可复制提示词
+## 9. 批次记录与旧提示
 
-在 `docs/validation/M2/YYYY-MM-DD-<work-package>.md` 和对应 `-handoff.md` 保存结果；原始数据在 `artifacts/M2/<run-id>/`，只有实际执行时创建。使用 [验证报告](../templates/validation-report.md)、[交接](../templates/handoff.md) 和 [ADR](../templates/adr.md) 模板。
+所选 D 批只需一份短记录；原始数据在本地 artifact 目录按需创建。只有影响公共 ABI、同步或许可的决定才需要 ADR，不再强制 validation + handoff 成套文件。
 
 交接至少包含：设备/模型 ID、工具和 shader SHA、资产本地取得方式、实际 graph/tensor metadata、量化公式、参考 bank、逐阶段误差、当前输入限制、history 提交/重置规则、阶段耗时及其测量边界、M4 可调用的 API 和仍缺失能力。报告实际 NPU 时延与整帧重放时延，不把前者换算成整个系统 FPS。
 
-> 请实现 M2 的一个可审阅工作批次，先阅读本文件、共享合同、AI 总则、项目状态与有效的 M1 报告。先冻结合法取得的 v07 模型、QAIRT 和 HTP 组合，按提取→参考图→量化/context→NPU 子图→Linux GPU 前后处理→连续帧顺序推进。复用上游源码前确认固定 SHA 与第三方声明。不得把 XLSR、CPU 后端、离线 context 生成或静态单图当作 FSR4 HTP 通过。先保留 GLES 和 staging，禁止一开始同时改成 Vulkan、零复制和异步。所有 history 属于明确 context，失败不提交历史，reset/换档递增 generation，拒绝旧帧。没有设备时只能交付离线/host 证据并保持 device_test not_run。输出每阶段产物、误差依据、未使用输入字段和精确复现命令，使用模板交接，不提前实现游戏 DLL 或 Decky。
+> 原可复制提示已停用；它会按完整 M2 顺序连续开工。只从 [D12–D18](DEVICE_EXECUTION.md#m2完整-fsr4-模型gpu-流水与离线序列) 选择一项，技术约束以上文为准。

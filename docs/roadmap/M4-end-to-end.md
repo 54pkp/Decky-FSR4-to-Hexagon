@@ -1,13 +1,13 @@
 # M4 · 同帧端到端闭环
 
-本节点把 M3 的真实游戏输入接入 M2 的 FSR4 GPU/HTP 后端，证明某次 Evaluate 的结果确实来自对应输入帧的 NPU 计算，并写回游戏提供的输出纹理。当前为实施设计，尚无游戏、Odin 3 或 HTP 闭环验证结果。
+状态：**`not_started`；真实设备与游戏 gate 均 `not_run`。** 实施只从 [D23–D27](DEVICE_EXECUTION.md#m4跨进程同帧闭环) 选择一个小批次；均需要目标设备，其中 D25–D27 还需要游戏。无设备 codec/mock 按 [E 队列](HOST_PREPARATION.md#e协议与主机工程准备) 验收。本节点把 M3 的真实游戏输入接入 M2 的 FSR4 GPU/HTP 后端；技术正文不作为第二套队列。
 
 - 前置依赖：M2 的真机模型/前后处理验证，以及 M3 的真实游戏接入与回写 gate 均通过。
 - 无硬件时：可开发协议、模拟服务与故障注入；这不满足 M4 的真机/游戏验收。
 - 首个基线：固定形状、SDR、一个会话、一个 context、单请求在途、同帧同步返回、CPU staging + loopback TCP。
 - 交付：可观测的最小闭环、故障隔离、可复现脚本与 `docs/validation/M4/YYYY-MM-DD-<work-package>.md`。
 
-先读[AI 实施规则](../ai/IMPLEMENTATION_GUIDE.md)、[跨组件合同](../architecture/CONTRACTS.md)和[项目状态](../STATUS.md)。此处接口均为拟议 `draft-0` 语义，不是已冻结的 wire ABI；字段布局和错误码以合同及实现 PR 为准。
+[D 执行队列](DEVICE_EXECUTION.md) · [跨组件合同](../architecture/CONTRACTS.md) · [项目状态](../STATUS.md)。此处接口均为拟议 `draft-0` 语义，不是已冻结的 wire ABI；字段布局和错误码以合同及实现批次为准。
 
 ## 1. 目标、非目标与来源
 
@@ -171,7 +171,7 @@ M4 通过要求 M2+M3 已通过、固定 profile 的真实 HTP 闭环、同帧�
 
 ## 8. 交接与停止条件
 
-交付[验收报告](../templates/validation-report.md)与[交接记录](../templates/handoff.md)，保存到 `docs/validation/M4/YYYY-MM-DD-<work-package>.md` 及同名 `-handoff.md`：依赖 gate、构建哈希、模型/设备/profile ID、实际后端日志、输入包/输出摘要、关联帧样例、故障测试结果、内存清理与恢复命令。
+所选 D 批使用一份短记录：依赖 gate、构建哈希、模型/设备/profile ID、实际后端日志索引、输入/输出摘要、关联帧样例、故障结果、内存清理与恢复命令；不再强制 validation + handoff 成套文件。
 
 记录全部不支持的格式、HDR/DRS/API/多 context 情况。涉及协议变化、独立进程隔离或内存注册策略时写[ADR](../templates/adr.md)，不要只在代码中留下经验常量。
 
@@ -179,7 +179,9 @@ M4 通过要求 M2+M3 已通过、固定 profile 的真实 HTP 闭环、同帧�
 
 M5 的输入包括：同帧帧包、history 生命周期、重置接口、所有字段映射、现有图像缺陷、失败恢复基线及实际阶段时序。
 
-## 9. 可直接复制给编码 AI 的提示词
+## 9. 旧执行提示（停用）
+
+> 下列历史提示不得再用于整体启动 M4；当前只从 [D23–D27](DEVICE_EXECUTION.md#m4跨进程同帧闭环) 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 请实施 M4 同帧端到端闭环。先读 docs/STATUS.md、docs/ai/IMPLEMENTATION_GUIDE.md、

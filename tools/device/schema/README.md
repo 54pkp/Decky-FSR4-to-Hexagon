@@ -87,6 +87,12 @@ Exit codes are shared by both programs:
 Diagnostics go to stderr. Structured data is written only to the explicitly
 named output. No CLI writes an existing file or directory by default.
 
+The current implementation still has documented check/open replacement races,
+and redaction failure can leave a partial new file. Use trusted directories and
+fresh destinations; only a successful command followed by hash/manifest
+verification is evidence. See the current [STATUS](../../../docs/STATUS.md) for
+the defect state.
+
 ## Frozen fixture and runner protocol
 
 Every fixture case has this layout:

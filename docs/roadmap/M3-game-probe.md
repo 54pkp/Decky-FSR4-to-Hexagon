@@ -1,11 +1,11 @@
 # M3 · 游戏接口探针与输出回写
 
-本节点将“游戏有 DLSS 菜单”转化为可以审计的 NGX 调用、资源语义和输出写回证据。当前只有设计，尚未实现探针，也未选定首个游戏。目标设备为 Odin 3 / Snapdragon 8 Elite / Armada OS；实际镜像和兼容栈以 M0 为准。
+状态：**`not_started`；真实设备与游戏 gate 均 `not_run`。** 实施只从 [D19–D22](DEVICE_EXECUTION.md#m3真实游戏接口与回写) 选择一个小批次；D19 需要目标设备兼容栈，D20–D22 还需要用户选定的游戏。无设备的自有 PE/D3D11 fixture 属于 [E 队列](HOST_PREPARATION.md#e协议与主机工程准备)。本文把“游戏有 DLSS 菜单”转化为可审计的 NGX 调用、资源语义和输出回写证据，技术正文不作为第二套队列。
 
 - 前置依赖：M0 的设备档案、可正常运行的原游戏、明确的游戏进程和兼容栈。
 - 可并行：M1/M2。此节点不需要 NPU，也不能证明 NPU 或 FSR4 已运行。
 - 交付：一个限定游戏/API/ABI 的可恢复探针、输入语义档案、回写测试与 `docs/validation/M3/YYYY-MM-DD-<work-package>.md`。
-- 状态依据：[项目状态](../STATUS.md)、[AI 实施规则](../ai/IMPLEMENTATION_GUIDE.md)、[跨组件合同](../architecture/CONTRACTS.md)。协议名以 `draft-0` 为准，尚未冻结 ABI。
+- 状态依据：[D 执行队列](DEVICE_EXECUTION.md)、[项目状态](../STATUS.md)和[跨组件合同](../architecture/CONTRACTS.md)。协议名以 `draft-0` 为准，尚未冻结 ABI。
 
 ## 1. 目标与范围
 
@@ -160,11 +160,13 @@ docs/validation/M3/          # 日期-工作包报告及同名 -handoff.md
 
 没有 Odin 3 时可完成 ABI 审查、PE 构建、模拟参数、合成纹理宿主、日志 schema、错误与卸载测试。不能宣称 Armada DLL 加载正确、游戏已有 DLSS SR 入口或真实资源能回写。
 
-提交前使用[验收报告模板](../templates/validation-report.md)和[交接模板](../templates/handoff.md)，按 `docs/validation/M3/YYYY-MM-DD-<work-package>.md` 及同名 `-handoff.md` 保存，至少交付：源 SHA/编译命令、产物哈希、支持的 ABI/API、游戏/profile 状态、原始配置恢复说明、最小复现、失败样例和下一步命令。需要改变 API/作用域时补[ADR](../templates/adr.md)。
+所选 D 批使用一份短记录，至少包含源 SHA/编译命令、产物哈希、ABI/API、游戏/profile gate、恢复说明、最小复现、失败样例和下一步。改变公共 API/作用域时才补 ADR，不再强制 validation + handoff 成套文件。
 
 M4 的输入必须包含：输入/输出纹理格式与尺寸合同、MV/jitter/exposure/reset 已知与未知项、Create/Release 生命周期、已验证回写函数和游戏加载链。任何未知项都不能在 M4 中默默补常量。
 
-## 9. 可直接复制给编码 AI 的提示词
+## 9. 旧执行提示（停用）
+
+> 下列历史提示不得再用于整体启动 M3；当前只从 [D19–D22](DEVICE_EXECUTION.md#m3真实游戏接口与回写) 选择一个叶子。保留它仅供核对技术禁区。
 
 ```text
 请在本仓库实施 M3 游戏接口探针。先读 docs/STATUS.md、

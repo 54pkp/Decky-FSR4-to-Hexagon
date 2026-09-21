@@ -26,8 +26,44 @@ back from the new environment. If creation, installation, or dependency verifica
 fails after the target is created, the partial target is preserved for manual
 inspection and removal; a later `init` will refuse to overwrite it.
 
+Installation is an attempted provisioning step, not proof that network access or
+a suitable package cache exists. It installs only the baseline requirements; the
+separate reference, FSR extraction, and QAIRT environments have their own pinned
+dependencies and are not created by this command.
+
 After a successful initialisation, run the host suite with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
+
+At the 2026-09-22 audit baseline this command reported 233 tests: 199 passed and
+34 skipped. Dedicated environments subsequently ran 33 of those skipped tests;
+one Windows symlink behavior was checked manually. Consult `docs/STATUS.md` for
+the current result rather than treating skipped tests as passed.
+
+## Existing test environments
+
+These are separate, already-provisioned local environments, not an implemented
+aggregate runner. Their ignored directories are machine-local; a fresh checkout
+must provision the relevant dependencies before using its command.
+
+| Environment | Audited purpose and versions | Dependency source |
+| --- | --- | --- |
+| `.venv` | Python 3.12.14; baseline schema, host, model, replay, and file-handling tests; jsonschema 4.26.0 | [`requirements-host.txt`](../device/requirements-host.txt) |
+| `local/venvs/reference` | Python 3.12.14; P5 ONNX/ORT CPU reference; NumPy 2.2.6, ONNX 1.18.0, ONNX Runtime 1.22.0 | [`requirements-reference.txt`](../reference/requirements-reference.txt) and the [P5 guide](../reference/README.md) |
+| `local/venvs/fsr-extract` | Python 3.12.14; P7 extraction and P8 pass0 checks; NumPy 2.2.6, jsonschema 4.26.0 | [P7/P8 guide](../fsr/README.md); no checked-in full rebuild lock yet |
+| `local/venvs/qairt-2.49.0.260730` | Python 3.12.14; P3 probe, P4 ABI tests, and P6 small graph; NumPy 1.26.4, ONNX 1.18.0, protobuf 7.36.2 | [QAIRT guide](../qairt/README.md); the P3 probe pins its required distribution profile, but a complete P6 rebuild lock remains R work |
+
+Run the environments explicitly from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+.\local\venvs\reference\Scripts\python.exe -m unittest discover -s tests/reference -p "test_*.py" -v
+.\local\venvs\fsr-extract\Scripts\python.exe -m unittest discover -s tests/fsr -p "test_*.py" -v
+.\local\venvs\qairt-2.49.0.260730\Scripts\python.exe -m unittest tests.qairt.test_probe tests.abi.test_inspector tests.abi.test_inventory tests.qairt.test_small_graph_pipeline -v
+```
+
+The specialized commands complement the baseline result; they do not turn its
+skips into one automatic 233/233 run. None of these host commands is a device,
+HTP, complete FSR4, or game test.
