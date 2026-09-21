@@ -197,6 +197,35 @@ class InspectorTests(unittest.TestCase):
                     inspector.inspect_file(path)
             self.assertIn(message, str(caught.exception))
 
+    def test_hexagon_elf32_is_supported_without_path_based_classification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory,
+                "libQnnHtpV79Skel.so",
+                elf32(machine=164),
+            )
+            report = inspector.inspect_file(path, expect_machine="hexagon")
+            cli = self._run(path, "--expect-machine", "hexagon")
+
+        self.assertEqual(0, cli.returncode, cli.stderr)
+        self.assertEqual("hexagon", json.loads(cli.stdout)["machine"])
+        self.assertEqual("ELF", report["format"])
+        self.assertEqual("hexagon", report["machine"])
+        self.assertEqual(32, report["bitness"])
+        self.assertEqual("unknown_elf", report["candidate"])
+        self.assertEqual(
+            ["no Android- or glibc-specific interpreter/dependency evidence"],
+            report["classification_evidence"],
+        )
+
+    def test_hexagon_rejects_elf64_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(directory, "hexagon.so", elf64(machine=164))
+            with self.assertRaisesRegex(
+                inspector.AbiError, "hexagon conflicts with ELF64 class"
+            ):
+                inspector.inspect_file(path)
+
     def test_multiple_verneed_records_parse_across_class_and_endianness(self):
         requirements = (
             ("libc.so.6", ("GLIBC_2.17", "GLIBC_2.28")),

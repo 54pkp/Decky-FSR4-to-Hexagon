@@ -29,7 +29,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 ## 当前阶段队列：P1–P9 无设备准备
 
-本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。P1–P2、P5、P7–P8 与 P9a–P9c 已完成，后续按依赖逐批实施；设备与游戏仍 `not_run`。
+本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。P1–P5、P7–P8 与 P9a–P9c 已完成，后续按依赖逐批实施；设备与游戏仍 `not_run`。
 
 执行约定：个人本地实验、先跑通；FSR 材料允许使用可核对内容的公开 fork/镜像，仅保留必要来源/版本/完整性记录和随包通知，不另做许可审计批次。NPU 量化目标为 W8A8，与 INT8 类型不互斥；是否转换/重新量化由实际 encoding 和工具链决定。模型/SDK 不随源码提交。
 
@@ -38,7 +38,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | complete |
 | P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | complete |
 | P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；固定官方 2.49.0.260730 包与独立 Python 3.12 环境 | complete |
-| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；合成解析、ELF class/endian 与多记录 Verneed 已覆盖，真实清单仍需 P3 | in_progress |
+| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2/P3；固定 QAIRT 包的 Windows、Android、Linux glibc、Hexagon V79 候选与包内缺失项已登记 | complete |
 | P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | complete |
 | P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
 | P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；固定公开镜像与提取器，生成物仅本地保存 | complete |
@@ -52,8 +52,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 ## 当前接续点
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- 下一批：P4，用 P3 固定 SDK 完成真实候选库 ABI 清单；之后才进入 P6 小图转换。设备匹配与 HTP 执行仍后置。
-- 当前最新记录：[P3 QAIRT Windows 主机工具](validation/host/2026-09-21-p3-qairt-windows-host-tools.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
+- 下一批：P6，用 P3 固定 QAIRT 与 P5 小图执行实际 W8A8 转换/量化并检查真实 encoding；HTP prepare/执行、设备匹配仍后置。
+- 当前最新记录：[P4 QAIRT ABI 候选清单](validation/host/2026-09-22-p4-qairt-abi-inventory.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
 - 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 

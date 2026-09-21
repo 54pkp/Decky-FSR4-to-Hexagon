@@ -39,6 +39,7 @@ _ELF_MACHINES = {
     3: ("x86", 32),
     40: ("arm", 32),
     62: ("x86_64", 64),
+    164: ("hexagon", 32),
     183: ("arm64", 64),
     243: ("riscv", None),
 }
@@ -533,7 +534,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--expect-machine",
-        choices=("x86", "x86_64", "arm", "arm64", "riscv"),
+        choices=("x86", "x86_64", "arm", "arm64", "hexagon", "riscv"),
         help="fail if the parsed machine does not match",
     )
     return parser
