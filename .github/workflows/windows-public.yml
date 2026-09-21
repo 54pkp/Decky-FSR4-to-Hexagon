@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12.14"]
+        python-version: ["3.10.11", "3.12.10"]
     steps:
       - name: Check out public source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -44,4 +44,6 @@ jobs:
 
 # Scope: public Windows x64 host tests only. Verbose unittest output preserves
 # capability skips as skips. ARM64, Linux, private SDK/assets, the ignored local
-# multi-venv matrix, HTP, devices, and games remain not_run.
+# multi-venv matrix (including its bundled/source-built Python 3.12.14), HTP,
+# devices, and games remain not_run. The public matrix uses the final Windows
+# binary-installer patches on the supported 3.10 and 3.12 lines.

@@ -10,6 +10,7 @@ WORKFLOW = REPO / ".github" / "workflows" / "windows-public.yml"
 HOST_REQUIREMENTS = "tools/device/requirements-host.txt"
 CHECKOUT_SHA = "11bd71901bbe5b1630ceea73d27597364c9af683"
 SETUP_PYTHON_SHA = "a26af69be951a213d495a4c3e4e4022e16d87065"
+PUBLIC_WINDOWS_PYTHONS = ["3.10.11", "3.12.10"]
 
 
 class PublicCiContractTests(unittest.TestCase):
@@ -18,13 +19,14 @@ class PublicCiContractTests(unittest.TestCase):
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
         cls.folded = cls.workflow.replace("\\", "/").lower()
 
-    def test_windows_x64_matrix_is_exactly_minimum_and_locked_python(self):
+    def test_windows_x64_matrix_is_exactly_installable_locked_patches(self):
         self.assertRegex(self.workflow, r"(?m)^\s*runs-on:\s*windows-2022\s*$")
         self.assertRegex(self.workflow, r"(?m)^\s*architecture:\s*x64\s*$")
         match = re.search(r"(?m)^\s*python-version:\s*\[([^]]+)\]\s*$", self.workflow)
         self.assertIsNotNone(match)
         versions = re.findall(r'["\']([^"\']+)["\']', match.group(1))
-        self.assertEqual(["3.10", "3.12.14"], versions)
+        self.assertEqual(PUBLIC_WINDOWS_PYTHONS, versions)
+        self.assertNotIn("3.12.14", versions)
         self.assertNotRegex(self.workflow, r"(?m)^\s*(?:os|architecture):\s*\[")
 
     def test_actions_are_allowlisted_and_pinned_to_immutable_commits(self):
@@ -115,6 +117,17 @@ class PublicCiContractTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertIn(value, scope)
+
+    def test_local_31214_is_not_claimed_as_setup_python_rebuildable(self):
+        readme = (REPO / "tools" / "host" / "README.md").read_text(encoding="utf-8")
+        public_section = readme.split("## Public Windows CI", 1)[1]
+        flattened = " ".join(public_section.split())
+        self.assertIn("Python 3.10.11", flattened)
+        self.assertIn("Python 3.12.10", flattened)
+        self.assertIn("Windows binary installer", flattened)
+        self.assertIn("bundled/source-built Python 3.12.14", flattened)
+        self.assertIn("not reconstructed by `setup-python`", flattened)
+        self.assertNotIn("matrix is Python 3.10 (", flattened)
 
 
 if __name__ == "__main__":

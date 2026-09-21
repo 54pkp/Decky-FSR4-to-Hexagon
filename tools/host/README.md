@@ -80,11 +80,17 @@ HTP, complete FSR4, or game test.
 ## Public Windows CI
 
 `.github/workflows/windows-public.yml` rebuilds only the public baseline on
-GitHub-hosted Windows x64. Its exact matrix is Python 3.10 (the repository
-minimum) and Python 3.12.14 (the currently locked host version). It installs
-only `tools/device/requirements-host.txt`, runs `pip check`, and executes the
-verbose baseline `unittest` discovery command above. Capability skips remain
-visible as skips and are never added to the pass count.
+GitHub-hosted Windows x64. Its exact matrix is Python 3.10.11 (the final Windows
+binary installer patch on the minimum supported 3.10 line) and Python 3.12.10
+(the final Windows binary installer patch on the 3.12 line). It installs only
+`tools/device/requirements-host.txt`, runs `pip check`, and executes the verbose
+baseline `unittest` discovery command above. Capability skips remain visible as
+skips and are never added to the pass count.
+
+The ignored local environments currently use bundled/source-built Python
+3.12.14. That interpreter is not reconstructed by `setup-python` on the
+Windows 2022 runner and is not part of the public matrix; its four-environment
+evidence remains a separate local result rather than a public CI claim.
 
 The workflow does not use secrets, ignored SDKs/assets, or the four-environment
 local runner. ARM64, Linux, the private reference/FSR/QAIRT environments, HTP,

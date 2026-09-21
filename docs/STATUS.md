@@ -46,7 +46,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 | R07 | `complete` | [Windows文件symlink能力探测](validation/host/2026-09-22-r07-windows-symlink-capability.md)；本机真实分支pass |
 | R08a | `complete` | [四venv聚合验证入口](validation/host/2026-09-22-r08a-multi-venv-verification.md)；4组completed，skip单列 |
 | R08b | `complete` | [P3后代管道超时回归](validation/host/2026-09-22-r08b-descendant-pipe-timeout.md)；Windows真实后代句柄回归，不声称进程树终止 |
-| R08c | `complete` | [公开Windows CI合同](validation/host/2026-09-22-r08c-public-windows-ci.md)；Python3.10/3.12.14 x64，云端首次运行待push后观察 |
+| R08c | `complete` | [公开Windows CI合同](validation/host/2026-09-22-r08c-public-windows-ci.md)；可公开重建的Python3.10.11/3.12.10 x64，修复后云端运行待push观察 |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -65,7 +65,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 最近验证快照与环境
 
-原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R08c后当前本机基线为294项、246 pass / 48 skipped；R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。原Windows普通文件symlink固定skip在本机能力探测成功并实跑通过。专用环境结果仍须单列，不能把skip写成pass。
+原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R08c后当前本机基线为295项、247 pass / 48 skipped；R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。原Windows普通文件symlink固定skip在本机能力探测成功并实跑通过。专用环境结果仍须单列，不能把skip写成pass。
 
 - P3真实快照冒烟、P4真实ZIP清单、P7重新提取通过；完整QAIRT ZIP哈希匹配。
 - P5三例误差：0 / 0 / 1.1920928955078125e-07。

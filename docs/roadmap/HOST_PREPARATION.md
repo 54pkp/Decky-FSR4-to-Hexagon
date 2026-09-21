@@ -30,7 +30,7 @@ R 分支关闭 2026-09-22 审计在无设备环境中可复现或可固化的欠
 | R07 | 把 Windows symlink 无条件 skip 改为能力探测：可创建时实跑，不可创建时记录可复现原因；两种分支都有测试 | 无 | POSIX symlink/hardlink 竞态；这些留设备计划 |
 | R08a | 建立显式多 venv 验证入口：依次运行 baseline、reference、fsr-extract、QAIRT suite，保留每组解释器/环境、pass/fail/skip/not_run 和总退出码 | R06a、R07 | CI 云环境、Linux 或设备结果 |
 | R08b | 固化 P3 后代进程继承 stdout/stderr 导致超时回收延长的回归；验收入口在预算内返回、诊断子孙状态且不误报工具成功 | 无 | POSIX 进程组/SIGALRM 或任意第三方进程可强制终止 |
-| R08c | 增加不依赖私有 SDK/资产的公共 CI 工作流，Windows覆盖最低支持Python与当前锁定版本的可公开重建suite，准确报告能力skip；未跑的ARM64/Linux组合仍not_run，私有多venv入口由R08a单独运行 | R07、R08a | QAIRT/FSR私有资产、所有架构/平台或设备CI已覆盖 |
+| R08c | 增加不依赖私有 SDK/资产的公共 CI 工作流，Windows x64覆盖公开可安装的固定Python3.10.11/3.12.10及skip准确的可重建suite；本地bundled/source-built 3.12.14及私有多venv由R08a单列、在公开CI为not_run，未跑的ARM64/Linux组合仍not_run | R07、R08a | QAIRT/FSR私有资产、所有架构/平台或设备CI已覆盖 |
 | R09 | 补 P7 独立语义负例：graph marker/count，以及公共 NPZ 的 100-array、shape、dtype 约束逐项畸形拒绝；不只覆盖坏 ZIP | P7 历史 fixture | 完整图语义、官方 golden 或运行等价 |
 | R10a | 补全 P7 环境 receipt：绑定真实 Python/NumPy、完整 argv 与 extractor stdout gate；缺项或环境摘要不符时拒绝 accepted 发布 | R09 | 来源真实性、完整可重复执行或官方等价 |
 | R10b | 固化 P8 对 P7 的信任链：消费者校验已知 accepted receipt 摘要及其来源/输出绑定，不接受仅内部自洽或旧 wrapper/validated receipt | R10a | 重新提取来源材料或官方等价 |
