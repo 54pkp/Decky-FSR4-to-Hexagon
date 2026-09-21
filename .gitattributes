@@ -6,3 +6,5 @@ tools/replay/fixtures/** text eol=lf
 tools/replay/fixtures/**/*.bin -text
 tools/assets/fixtures/** text eol=lf
 tools/assets/fixtures/**/*.bin -text
+tools/reference/fixtures/** text eol=lf
+tools/reference/fixtures/**/*.onnx -text

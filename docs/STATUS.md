@@ -39,7 +39,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | complete |
 | P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；合法包、登录和版本条件 | not_started |
 | P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；真实清单需 P3，合成测试可先做 | not_started |
-| P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | not_started |
+| P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | complete |
 | P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
 | P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
 | P8 FSR 子图 CPU 对照 | 真实提取结果的 simulator/ONNX 对照与误差记录 | P7/P5；不声称官方完整等价 | not_started |
@@ -52,8 +52,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 ## 当前接续点
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- 下一批：P5，在独立本地环境建立自有小型 ONNX Conv/Add/ReLU CPU 数值基准；P3 仍等待合法 QAIRT 包条件，不能以安装说明代替实际工具冒烟。
-- 当前最新记录：[P9c 合成失败与关闭](validation/host/2026-09-21-p9c-failure-close.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
+- 下一批：P4，先交付自有合成 PE/ELF 解析与错误输入检查；在取得 P3 的合法 QAIRT 包和候选库清单前保持 `in_progress`，不推断目标 ABI 兼容。P3 仍等待合法包条件。
+- 当前最新记录：[P5 自有小图 CPU 数值基准](validation/host/2026-09-21-p5-onnx-cpu-reference.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
 - 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 
