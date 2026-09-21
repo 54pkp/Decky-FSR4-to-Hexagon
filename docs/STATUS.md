@@ -29,7 +29,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 ## 当前阶段队列：P1–P9 无设备准备
 
-本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。P1–P2 与 P9a 已完成，后续按依赖逐批实施；设备与游戏仍 `not_run`。
+本阶段由用户授权新增。详见[进展评估、材料清单和分批验收](roadmap/HOST_PREPARATION.md)。P1–P2 与 P9a–P9b 已完成，后续按依赖逐批实施；设备与游戏仍 `not_run`。
 
 执行约定：个人本地实验、先跑通；FSR 材料允许使用可核对内容的公开 fork/镜像，仅保留必要来源/版本/完整性记录和随包通知，不另做许可审计批次。NPU 量化目标为 W8A8，与 INT8 类型不互斥；是否转换/重新量化由实际 encoding 和工具链决定。模型/SDK 不随源码提交。
 
@@ -44,7 +44,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
 | P8 FSR 子图 CPU 对照 | 真实提取结果的 simulator/ONNX 对照与误差记录 | P7/P5；不声称官方完整等价 | not_started |
 | P9a 资源预算 | 隔离资源上限、背压与完成后回收 | H4；无 SDK/模型依赖 | complete |
-| P9b 幂等保留 | 去重记录上限、过期通知拒绝与重试语义 | P9a；无 SDK/模型依赖 | not_started |
+| P9b 幂等保留 | 去重记录上限、过期通知拒绝与重试语义 | P9a；无 SDK/模型依赖 | complete |
 | P9c 失败/关闭 | 最小故障/关闭事件、候选 history 与迟到完成测试 | P9a/P9b；无 SDK/模型依赖 | not_started |
 
 选取规则：优先 P1，然后按依赖选一批；资产阻塞只暂停相应分支，可继续 P4 合成部分、P5 或 P9 子批次。P1–P8 加 P9a/P9b/P9c 共 11 个单次批次。每批必须有实际实现/检查和短记录；不能以说明书或 mock 代替真实资产安装、转换或推理的验收。P 队列不包含 Linux/WSL 安装或设备部署。
@@ -52,8 +52,8 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 ## 当前接续点
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
-- 下一批：P9b，为消费确认和 reset 幂等记录增加有界保留及过期通知语义；P3 仍等待合法 QAIRT 包条件，不能以安装说明代替实际工具冒烟。
-- 当前最新记录：[P9a 资源预算与背压](validation/host/2026-09-21-p9a-resource-budget-backpressure.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
+- 下一批：P9c，增加最小 execution-failure/close 事件及候选 history、在途资源和迟到事件隔离；P3 仍等待合法 QAIRT 包条件，不能以安装说明代替实际工具冒烟。
+- 当前最新记录：[P9b 有界幂等保留](validation/host/2026-09-21-p9b-bounded-idempotency.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
 - 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 

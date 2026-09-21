@@ -105,12 +105,13 @@ error/disconnect → quarantine_or_cleanup → destroy_context → closed
 - 发起 reset 后旧代在途结果不得覆盖新代。需要等完成或隔离资源，不能仅清计数。
 - 正常输出应匹配完整的 `(service_instance_id, session_id, context_id, frame_id, history_generation, model_manifest_id)`。
 - 适配器通过带完整帧身份的 `result_consumed` 成功/失败通知确认写回；成功指按图形 API 的同步和资源语义可供后续游戏命令消费，不表示已经物理显示。服务收到并校验成功通知前保持 pending，不执行下一帧；通知重复处理必须幂等，丢失/超时/失败则失效历史。socket send 成功不等于写回成功。
+- 去重终态元数据必须有界，不能靠无限保存实现幂等。当前 host 合成基线分别 FIFO 保留最近 4 个消费决定和 4 个 reset 结果；首次终结决定进入窗口，重试或冲突不刷新顺序。窗口内同参重试幂等、冲突拒绝；窗口外通知以不可重试的 unknown/expired 语义拒绝，不能再次提交/失效 history、释放其它资源或推进 generation。正式 M4 协议需版本化或协商保留窗口和稳定错误，不得默认为无限重试。
 - 记录处理完成与游戏实际写回两个事件。history/recurrent 优先采用 current/next 双缓冲：完成全部必要处理并确认消费后交换；若沿用 in-place 更新，任何部分更新失败或消费不确定均使整套历史失效，等待在途工作结束后重新初始化。仅跳过一个 commit 标记不能撤销 GPU 已写入的数据。
 - GPU readback 完成前 CPU 不能读；NPU 完成前 GPU 后处理不能读；游戏继续使用输出前写回必须可见。D3D12 未提交命令的 fence 不能在阻碍提交的回调中等待。
 - 超时代表调用方等待预算耗尽，不代表 graphExecute 已取消。仍在使用的 context/buffer/library 不能释放或重用；先停止新请求，隔离旧工作，再按后端能力退出/恢复。
 - 断连、device loss、服务重启、休眠恢复均产生可观察事件。自动 DSP reset 不属于默认恢复动作。
 
-`draft-0` 建议由原生 context 所有者作为 generation 的唯一权威：M2 离线时是执行器，M4 接入时是 daemon。创建回复给出初始 generation；适配器显式 reset 时发送带当前 generation 和 `request_id` 的请求，服务等待或隔离旧工作、失效/初始化历史后递增并回复新 generation，适配器随后才发送该代帧。重复 reset 请求返回同一结果，不重复递增；帧中的 reset 来源仅作记录，不再触发第二次递增。服务检测到连续性丢失时拒绝继续并要求重新握手/reset，不能单方换代后默默接受旧代输入。M4-A 实施前用 ADR 冻结此流程或替代流程，并同步 M2/M5 与协议测试。
+`draft-0` 建议由原生 context 所有者作为 generation 的唯一权威：M2 离线时是执行器，M4 接入时是 daemon。创建回复给出初始 generation；适配器显式 reset 时发送带当前 generation 和 `request_id` 的请求，服务等待或隔离旧工作、失效/初始化历史后递增并回复新 generation，适配器随后才发送该代帧。`request_id` 在一个 context 生命周期内必须唯一且不可复用；有限窗口淘汰后，服务无法永久区分 opaque ID 的历史复用与新请求。保留窗口内的重复 reset 返回同一结果，不重复递增；窗口外带旧 generation 的重复请求拒绝并要求重新同步。帧中的 reset 来源仅作记录，不再触发第二次递增。服务检测到连续性丢失时拒绝继续并要求重新握手/reset，不能单方换代后默默接受旧代输入。M4-A 实施前用 ADR 冻结此流程或替代流程，并同步 M2/M5 与协议测试。
 
 队列深度、缓存帧或多帧异步模式只能在后续独立模式中加入；不能改变同帧基线的含义。每种模式有独立的质量/延迟报告和默认启用条件。
 

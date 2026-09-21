@@ -27,6 +27,8 @@ MAX_JSON_INTEGER_DIGITS = 1_000
 MAX_ID_CHARACTERS = 128
 MAX_DECIMAL_DIGITS = 20
 MAX_RETAINED_RESOURCE_COUNT = 4
+MAX_CONSUMED_RECORD_COUNT = 4
+MAX_RESET_RESULT_COUNT = 4
 
 _FIXED_ID_FIELDS = (
     "service_instance_id",
@@ -216,6 +218,16 @@ class LifecycleContext:
             return self._isolated_capacity_cells() + self._active_capacity_cells
 
     @property
+    def consumed_record_count(self) -> int:
+        with self._lock:
+            return len(self._consumed)
+
+    @property
+    def reset_result_count(self) -> int:
+        with self._lock:
+            return len(self._reset_results)
+
+    @property
     def last_completed_frame_id(self) -> str | None:
         with self._lock:
             if self._last_completed_frame is None:
@@ -243,6 +255,18 @@ class LifecycleContext:
 
     def _isolated_capacity_cells(self) -> int:
         return sum(item["capacity_cells"] for item in self._isolated.values())
+
+    def _remember_consumed(self, key: tuple[str, ...], success: bool) -> None:
+        self._consumed[key] = success
+        while len(self._consumed) > MAX_CONSUMED_RECORD_COUNT:
+            del self._consumed[next(iter(self._consumed))]
+
+    def _remember_reset(
+        self, request_id: str, expected_generation: str, result_generation: str
+    ) -> None:
+        self._reset_results[request_id] = (expected_generation, result_generation)
+        while len(self._reset_results) > MAX_RESET_RESULT_COUNT:
+            del self._reset_results[next(iter(self._reset_results))]
 
     def submit(self, request: Any, history: Any, motion_vectors: Any) -> None:
         checked = _identity(request, "request")
@@ -376,9 +400,14 @@ class LifecycleContext:
                 ):
                     _fail("result_consumed", "isolated request has not completed")
                 del self._isolated[key]
-                self._consumed[key] = success
+                self._remember_consumed(key, success)
                 return
 
+            if self._active_identity is None:
+                _fail(
+                    "result_consumed",
+                    "notification is outside the retained idempotency window",
+                )
             self._require_active_match(checked, "result_consumed")
             assert self._active_state is not None
             if self._active_state not in (
@@ -402,7 +431,7 @@ class LifecycleContext:
             self._active_candidate_history = None
             self._active_capacity_cells = 0
             self._active_state = None
-            self._consumed[key] = success
+            self._remember_consumed(key, success)
 
     def reset(self, request_id: Any, expected_generation: Any) -> str:
         """Invalidate history, isolate retained work, and start a new generation."""
@@ -441,7 +470,9 @@ class LifecycleContext:
             self._last_committed_frame = None
             self._history_invalid = False
             self._identity["history_generation"] = next_generation
-            self._reset_results[checked_request_id] = (checked_expected, next_generation)
+            self._remember_reset(
+                checked_request_id, checked_expected, next_generation
+            )
             return next_generation
 
 

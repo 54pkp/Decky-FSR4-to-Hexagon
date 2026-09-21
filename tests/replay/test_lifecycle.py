@@ -265,6 +265,63 @@ class LifecycleTests(unittest.TestCase):
             "result_consumed.success",
         )
 
+    def test_consumption_idempotency_window_is_bounded_and_expiry_is_inert(self):
+        context = self.new_context()
+        consumed = []
+        for generation in range(lifecycle.MAX_CONSUMED_RECORD_COUNT):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            context.complete(request)
+            context.result_consumed(request, True)
+            consumed.append(request)
+            context.reset(f"consumed-reset-{generation}", str(generation))
+
+        self.assertEqual(
+            lifecycle.MAX_CONSUMED_RECORD_COUNT, context.consumed_record_count
+        )
+        context.result_consumed(consumed[0], True)
+        self.assert_invalid(
+            lambda: context.result_consumed(consumed[0], False),
+            "result_consumed.success",
+        )
+
+        newest = copy.deepcopy(self.scenario["request"])
+        newest["frame_id"] = str(lifecycle.MAX_CONSUMED_RECORD_COUNT + 1)
+        newest["history_generation"] = str(lifecycle.MAX_CONSUMED_RECORD_COUNT)
+        self.submit(context, newest)
+        context.complete(newest)
+        context.result_consumed(newest, True)
+        self.assertEqual(
+            lifecycle.MAX_CONSUMED_RECORD_COUNT, context.consumed_record_count
+        )
+
+        generation_before = context.history_generation
+        history_before = context.committed_history
+        committed_before = context.last_committed_frame_id
+        self.assert_invalid(
+            lambda: context.result_consumed(consumed[0], True),
+            "outside the retained idempotency window",
+        )
+        self.assertEqual(generation_before, context.history_generation)
+        self.assertEqual(history_before, context.committed_history)
+        self.assertEqual(committed_before, context.last_committed_frame_id)
+        self.assertEqual("ready", context.state)
+
+        active = copy.deepcopy(newest)
+        active["frame_id"] = str(lifecycle.MAX_CONSUMED_RECORD_COUNT + 2)
+        self.submit_with_committed_history(context, active)
+        active_before = context.active_identity
+        retained_before = context.retained_resource_count
+        self.assert_invalid(
+            lambda: context.result_consumed(consumed[0], True),
+            "result_consumed.frame_id",
+        )
+        self.assertEqual(active_before, context.active_identity)
+        self.assertEqual(retained_before, context.retained_resource_count)
+        self.assertEqual("executing", context.state)
+
     def test_execution_timeout_retains_resources_until_matching_completion(self):
         context = self.new_context()
         self.submit(context)
@@ -342,6 +399,47 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual("2", context.reset("reset-2", "1"))
         self.assertEqual("1", context.reset("reset-1", "0"))
         self.assertEqual("2", context.history_generation)
+
+    def test_reset_idempotency_window_is_bounded_and_expiry_cannot_isolate_work(self):
+        context = self.new_context()
+        for generation in range(lifecycle.MAX_RESET_RESULT_COUNT):
+            self.assertEqual(
+                str(generation + 1),
+                context.reset(f"retained-reset-{generation}", str(generation)),
+            )
+
+        self.assertEqual(lifecycle.MAX_RESET_RESULT_COUNT, context.reset_result_count)
+        self.assertEqual("1", context.reset("retained-reset-0", "0"))
+        self.assert_invalid(
+            lambda: context.reset(
+                "retained-reset-0", str(lifecycle.MAX_RESET_RESULT_COUNT)
+            ),
+            "reset.request_id",
+        )
+
+        self.assertEqual(
+            str(lifecycle.MAX_RESET_RESULT_COUNT + 1),
+            context.reset(
+                "evicting-reset", str(lifecycle.MAX_RESET_RESULT_COUNT)
+            ),
+        )
+        self.assertEqual(lifecycle.MAX_RESET_RESULT_COUNT, context.reset_result_count)
+
+        active = copy.deepcopy(self.scenario["request"])
+        active["history_generation"] = str(lifecycle.MAX_RESET_RESULT_COUNT + 1)
+        self.submit(context, active)
+        active_before = context.active_identity
+        generation_before = context.history_generation
+        history_before = context.committed_history
+        self.assert_invalid(
+            lambda: context.reset("retained-reset-0", "0"),
+            "reset.history_generation",
+        )
+        self.assertEqual(active_before, context.active_identity)
+        self.assertEqual(0, context.isolated_resource_count)
+        self.assertEqual(generation_before, context.history_generation)
+        self.assertEqual(history_before, context.committed_history)
+        self.assertEqual("executing", context.state)
 
     def test_reset_generation_overflow_is_atomic(self):
         identity = copy.deepcopy(self.scenario["context"])
