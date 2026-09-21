@@ -10,10 +10,11 @@ python tools/abi/inspector.py path/to/library --sdk-version 2.50.0
 
 The JSON report records format, machine, bitness, explicit SDK metadata (or
 `unknown`), and ELF interpreter, `DT_NEEDED`, and `GLIBC_*` version requirements
-when structurally available. Candidate classification requires binary evidence:
-PE is Windows, while Android and Linux glibc ELF candidates require distinctive
-interpreter/dependency/version evidence. Architecture and path names are not ABI
-proof.
+when structurally available. ELF32/ELF64 and little-/big-endian layouts have
+synthetic host regression coverage. Candidate classification requires binary
+evidence: PE is Windows, while Android and Linux glibc ELF candidates require
+distinctive interpreter/dependency/version evidence. Architecture and path names
+are not ABI proof.
 
 Exit code `0` means a report was produced, `2` is command-line usage error, and
 `3` is an input, structure, unsupported-machine, or expected-machine error. A

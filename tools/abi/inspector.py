@@ -206,13 +206,18 @@ def _parse_elf(data: bytes, path: Path, sdk_version: str) -> dict[str, Any]:
         )
         expected_ph_size = 56
     if ehsize < header_size or ehsize > len(data):
-        raise AbiError("ELF header size is malformed or outside the file")
+        raise AbiError(
+            f"ELF header size must be at least {header_size} for ELF{bitness} "
+            "and remain within the file"
+        )
     if not 1 <= phnum <= MAX_PROGRAM_HEADERS:
         raise AbiError(
             f"ELF program-header count must be between 1 and {MAX_PROGRAM_HEADERS}"
         )
     if phentsize < expected_ph_size:
         raise AbiError("ELF program-header entry size is too small")
+    if phoff < ehsize:
+        raise AbiError("ELF program-header table overlaps the ELF header")
     _bounded(data, phoff, phentsize * phnum, "ELF program-header table")
 
     segments: list[dict[str, int]] = []
@@ -240,6 +245,16 @@ def _parse_elf(data: bytes, path: Path, sdk_version: str) -> dict[str, Any]:
                 "filesz": p_filesz,
             }
         )
+
+    first_load = next(
+        (index for index, segment in enumerate(segments) if segment["type"] == 1),
+        None,
+    )
+    if first_load is not None and any(
+        segment["type"] == 3 and index > first_load
+        for index, segment in enumerate(segments)
+    ):
+        raise AbiError("ELF interpreter segment must precede loadable segments")
 
     def map_vaddr(address: int, size: int, label: str) -> int:
         matches: list[int] = []

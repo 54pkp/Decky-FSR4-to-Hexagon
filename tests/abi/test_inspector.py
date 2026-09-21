@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.abi.fixtures import elf64, pe64
+from tests.abi.fixtures import elf32, elf64, pe64
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -69,6 +69,157 @@ class InspectorTests(unittest.TestCase):
         self.assertEqual(["libc.so.6", "libm.so.6"], report["needed"])
         self.assertEqual(["GLIBC_2.17", "GLIBC_2.34"], report["glibc_versions"])
         self.assertEqual("2.50.0", report["sdk_version"])
+
+    def test_elf_class_and_data_select_layouts_and_parse_dynamic_evidence(self):
+        variants = (
+            (
+                "elf32-le",
+                elf32,
+                {"machine": 3, "endianness": "little"},
+                "x86",
+                32,
+                "/lib/ld-linux.so.2",
+            ),
+            (
+                "elf32-be",
+                elf32,
+                {"machine": 40, "endianness": "big"},
+                "arm",
+                32,
+                "/lib/ld-linux-armhf.so.3",
+            ),
+            (
+                "elf64-le",
+                elf64,
+                {"machine": 62, "endianness": "little"},
+                "x86_64",
+                64,
+                "/lib64/ld-linux-x86-64.so.2",
+            ),
+            (
+                "elf64-be",
+                elf64,
+                {"machine": 183, "endianness": "big"},
+                "arm64",
+                64,
+                "/lib/ld-linux-aarch64.so.1",
+            ),
+        )
+        for name, builder, builder_args, machine, bitness, interpreter in variants:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                payload = builder(
+                    **builder_args,
+                    interpreter=interpreter,
+                    needed=("libc.so.6", "libm.so.6"),
+                    glibc_versions=("GLIBC_2.17", "GLIBC_2.34"),
+                )
+                path = self._write(directory, name + ".so", payload)
+                report = inspector.inspect_file(path)
+            self.assertEqual("ELF", report["format"])
+            self.assertEqual(machine, report["machine"])
+            self.assertEqual(bitness, report["bitness"])
+            self.assertEqual(builder_args["endianness"], report["endianness"])
+            self.assertEqual(interpreter, report["interpreter"])
+            self.assertEqual(["libc.so.6", "libm.so.6"], report["needed"])
+            self.assertEqual(["GLIBC_2.17", "GLIBC_2.34"], report["glibc_versions"])
+            self.assertEqual("linux_glibc_candidate", report["candidate"])
+            self.assertIn(
+                f"glibc-style dynamic linker: {interpreter}",
+                report["classification_evidence"],
+            )
+            self.assertIn(
+                "GNU version requirements include GLIBC_* symbols",
+                report["classification_evidence"],
+            )
+
+    def test_mismatched_elf_class_and_data_declarations_are_rejected(self):
+        wrong_class = bytearray(elf32(machine=40, endianness="big"))
+        wrong_class[4] = 2
+        wrong_data = bytearray(elf64(machine=183, endianness="big"))
+        wrong_data[5] = 1
+
+        for name, payload, message in (
+            ("wrong-class.so", wrong_class, "conflicts with ELF64 class"),
+            ("wrong-data.so", wrong_data, "unsupported ELF header version"),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                path = self._write(directory, name, bytes(payload))
+                with self.assertRaises(inspector.AbiError) as caught:
+                    inspector.inspect_file(path)
+            self.assertIn(message, str(caught.exception))
+
+    def test_elf_header_size_and_program_table_overlap_are_rejected(self):
+        cases = []
+        for name, payload, endian, ehsize_offset, phoff_offset, header_size in (
+            ("elf32-le", elf32(), "<", 40, 28, 52),
+            ("elf64-be", elf64(endianness="big"), ">", 52, 32, 64),
+        ):
+            undersized = bytearray(payload)
+            struct.pack_into(endian + "H", undersized, ehsize_offset, header_size - 1)
+            cases.append((name + "-size", undersized, "header size must be at least"))
+
+            extended = bytearray(payload)
+            struct.pack_into(endian + "H", extended, ehsize_offset, header_size + 8)
+            cases.append((name + "-extended-overlap", extended, "overlaps the ELF header"))
+
+            overlapping = bytearray(payload)
+            struct.pack_into(
+                endian + ("I" if header_size == 52 else "Q"),
+                overlapping,
+                phoff_offset,
+                header_size - 4,
+            )
+            cases.append((name + "-overlap", overlapping, "overlaps the ELF header"))
+
+        for name, payload, message in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                path = self._write(directory, name + ".so", bytes(payload))
+                with self.assertRaises(inspector.AbiError) as caught:
+                    inspector.inspect_file(path)
+            self.assertIn(message, str(caught.exception))
+
+    def test_nonoverlapping_extended_elf_header_is_accepted(self):
+        for name, original, endian, ehsize_offset, phoff_offset, header_size, bitness in (
+            ("elf32-le", elf32(), "<", 40, 28, 52, 32),
+            ("elf64-be", elf64(endianness="big"), ">", 52, 32, 64, 64),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                payload = bytearray(original)
+                payload[header_size:header_size] = b"\0" * 8
+                extended_size = header_size + 8
+                struct.pack_into(endian + "H", payload, ehsize_offset, extended_size)
+                struct.pack_into(
+                    endian + ("I" if header_size == 52 else "Q"),
+                    payload,
+                    phoff_offset,
+                    extended_size,
+                )
+                filesz_offset = extended_size + (16 if header_size == 52 else 32)
+                memsz_offset = extended_size + (20 if header_size == 52 else 40)
+                size_format = endian + ("I" if header_size == 52 else "Q")
+                struct.pack_into(size_format, payload, filesz_offset, len(payload))
+                struct.pack_into(size_format, payload, memsz_offset, len(payload))
+                path = self._write(directory, name + ".so", bytes(payload))
+                report = inspector.inspect_file(path)
+            self.assertEqual("ELF", report["format"])
+            self.assertEqual(bitness, report["bitness"])
+
+    def test_interpreter_segment_must_precede_loadable_segments(self):
+        payload = bytearray(
+            elf64(
+                interpreter="/lib/ld-linux-aarch64.so.1",
+                needed=("libc.so.6",),
+            )
+        )
+        first = bytes(payload[64 : 64 + 56])
+        second = bytes(payload[64 + 56 : 64 + 112])
+        payload[64 : 64 + 56] = second
+        payload[64 + 56 : 64 + 112] = first
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(directory, "late-interpreter.so", bytes(payload))
+            with self.assertRaises(inspector.AbiError) as caught:
+                inspector.inspect_file(path)
+        self.assertIn("interpreter segment must precede", str(caught.exception))
 
     def test_android_candidate_requires_binary_evidence(self):
         payload = elf64(

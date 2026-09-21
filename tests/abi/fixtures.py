@@ -35,18 +35,72 @@ def pe64(machine: int = 0x8664, optional_magic: int = 0x20B) -> bytes:
     return bytes(data)
 
 
-def elf64(
+def elf_image(
     *,
-    machine: int = 183,
+    bitness: int,
+    endianness: str,
+    machine: int,
     interpreter: str | None = None,
     needed: tuple[str, ...] = (),
     glibc_versions: tuple[str, ...] = (),
 ) -> bytes:
-    """Build a small ELF64 image whose load segment maps the whole file."""
+    """Build a small ELF image whose load segment maps the whole file."""
+    if bitness not in (32, 64):
+        raise ValueError("ELF fixture bitness must be 32 or 64")
+    if endianness not in ("little", "big"):
+        raise ValueError("ELF fixture endianness must be 'little' or 'big'")
+
+    elf_class = 1 if bitness == 32 else 2
+    data_encoding = 1 if endianness == "little" else 2
+    endian = "<" if endianness == "little" else ">"
+    header_size = 52 if bitness == 32 else 64
+    program_header_size = 32 if bitness == 32 else 56
+    dynamic_entry_size = 8 if bitness == 32 else 16
+    payload_alignment = 4 if bitness == 32 else 8
+
     phnum = 1 + (interpreter is not None) + bool(needed or glibc_versions)
-    phoff = 64
-    cursor = phoff + phnum * 56
+    phoff = header_size
+    cursor = phoff + phnum * program_header_size
     payloads: list[tuple[str, int, bytes]] = []
+
+    def align(value: int) -> int:
+        return (value + payload_alignment - 1) & ~(payload_alignment - 1)
+
+    def dynamic_entry(tag: int, value: int) -> bytes:
+        return struct.pack(endian + ("iI" if bitness == 32 else "qQ"), tag, value)
+
+    def program_header(
+        p_type: int,
+        flags: int,
+        offset: int,
+        vaddr: int,
+        filesz: int,
+        memsz: int,
+        alignment: int,
+    ) -> bytes:
+        if bitness == 32:
+            return struct.pack(
+                endian + "IIIIIIII",
+                p_type,
+                offset,
+                vaddr,
+                0,
+                filesz,
+                memsz,
+                flags,
+                alignment,
+            )
+        return struct.pack(
+            endian + "IIQQQQQQ",
+            p_type,
+            flags,
+            offset,
+            vaddr,
+            0,
+            filesz,
+            memsz,
+            alignment,
+        )
 
     interp_offset = 0
     if interpreter is not None:
@@ -54,7 +108,7 @@ def elf64(
         payload = interpreter.encode("utf-8") + b"\0"
         payloads.append(("interp", cursor, payload))
         cursor += len(payload)
-        cursor = (cursor + 7) & ~7
+        cursor = align(cursor)
 
     dynamic_offset = 0
     dynamic_size = 0
@@ -71,12 +125,12 @@ def elf64(
     if needed or glibc_versions:
         dynamic_offset = cursor
         entry_count = len(needed) + 3 + (2 if glibc_versions else 0)
-        dynamic_size = entry_count * 16
+        dynamic_size = entry_count * dynamic_entry_size
         cursor += dynamic_size
         string_offset = cursor
         payloads.append(("strings", cursor, bytes(string_table)))
         cursor += len(string_table)
-        cursor = (cursor + 7) & ~7
+        cursor = align(cursor)
         verneed_offset = 0
         verneed = b""
         if glibc_versions:
@@ -86,11 +140,16 @@ def elf64(
                 next_offset = 16 if index + 1 < len(glibc_versions) else 0
                 aux.extend(
                     struct.pack(
-                        "<IHHII", 0, 0, index + 2, string_offsets[version], next_offset
+                        endian + "IHHII",
+                        0,
+                        0,
+                        index + 2,
+                        string_offsets[version],
+                        next_offset,
                     )
                 )
             verneed = struct.pack(
-                "<HHIII",
+                endian + "HHIII",
                 1,
                 len(glibc_versions),
                 string_offsets["libc.so.6"],
@@ -102,64 +161,117 @@ def elf64(
 
         dynamic = bytearray()
         for library in needed:
-            dynamic.extend(struct.pack("<qQ", 1, string_offsets[library]))
-        dynamic.extend(struct.pack("<qQ", 5, base + string_offset))
-        dynamic.extend(struct.pack("<qQ", 10, len(string_table)))
+            dynamic.extend(dynamic_entry(1, string_offsets[library]))
+        dynamic.extend(dynamic_entry(5, base + string_offset))
+        dynamic.extend(dynamic_entry(10, len(string_table)))
         if glibc_versions:
-            dynamic.extend(struct.pack("<qQ", 0x6FFFFFFE, base + verneed_offset))
-            dynamic.extend(struct.pack("<qQ", 0x6FFFFFFF, 1))
-        dynamic.extend(struct.pack("<qQ", 0, 0))
+            dynamic.extend(dynamic_entry(0x6FFFFFFE, base + verneed_offset))
+            dynamic.extend(dynamic_entry(0x6FFFFFFF, 1))
+        dynamic.extend(dynamic_entry(0, 0))
         assert len(dynamic) == dynamic_size
         payloads.append(("dynamic", dynamic_offset, bytes(dynamic)))
 
     data = bytearray(cursor)
-    data[:16] = b"\x7fELF" + bytes((2, 1, 1, 0, 0)) + b"\0" * 7
-    struct.pack_into(
-        "<HHIQQQIHHHHHH",
-        data,
-        16,
-        3,
-        machine,
-        1,
-        0,
-        phoff,
-        0,
-        0,
-        64,
-        56,
-        phnum,
-        0,
-        0,
-        0,
-    )
+    data[:16] = b"\x7fELF" + bytes((elf_class, data_encoding, 1, 0, 0)) + b"\0" * 7
+    if bitness == 32:
+        struct.pack_into(
+            endian + "HHIIIIIHHHHHH",
+            data,
+            16,
+            3,
+            machine,
+            1,
+            0,
+            phoff,
+            0,
+            0,
+            header_size,
+            program_header_size,
+            phnum,
+            0,
+            0,
+            0,
+        )
+    else:
+        struct.pack_into(
+            endian + "HHIQQQIHHHHHH",
+            data,
+            16,
+            3,
+            machine,
+            1,
+            0,
+            phoff,
+            0,
+            0,
+            header_size,
+            program_header_size,
+            phnum,
+            0,
+            0,
+            0,
+        )
     final_size = len(data)
-    program_headers = [
-        struct.pack("<IIQQQQQQ", 1, 5, 0, base, base, final_size, final_size, 0x1000)
-    ]
+    program_headers = []
     if interpreter is not None:
         size = len(interpreter.encode("utf-8")) + 1
         program_headers.append(
-            struct.pack(
-                "<IIQQQQQQ", 3, 4, interp_offset, base + interp_offset, 0, size, size, 1
-            )
+            program_header(3, 4, interp_offset, base + interp_offset, size, size, 1)
         )
+    program_headers.append(
+        program_header(1, 5, 0, base, final_size, final_size, 0x1000)
+    )
     if needed or glibc_versions:
         program_headers.append(
-            struct.pack(
-                "<IIQQQQQQ",
+            program_header(
                 2,
                 4,
                 dynamic_offset,
                 base + dynamic_offset,
-                0,
                 dynamic_size,
                 dynamic_size,
-                8,
+                payload_alignment,
             )
         )
     for index, header in enumerate(program_headers):
-        start = phoff + index * 56
-        data[start : start + 56] = header
+        start = phoff + index * program_header_size
+        data[start : start + program_header_size] = header
     for _name, offset, payload in payloads:
         data[offset : offset + len(payload)] = payload
     return bytes(data)
+
+
+def elf32(
+    *,
+    machine: int = 3,
+    endianness: str = "little",
+    interpreter: str | None = None,
+    needed: tuple[str, ...] = (),
+    glibc_versions: tuple[str, ...] = (),
+) -> bytes:
+    return elf_image(
+        bitness=32,
+        endianness=endianness,
+        machine=machine,
+        interpreter=interpreter,
+        needed=needed,
+        glibc_versions=glibc_versions,
+    )
+
+
+def elf64(
+    *,
+    machine: int = 183,
+    endianness: str = "little",
+    interpreter: str | None = None,
+    needed: tuple[str, ...] = (),
+    glibc_versions: tuple[str, ...] = (),
+) -> bytes:
+    return elf_image(
+        bitness=64,
+        endianness=endianness,
+        machine=machine,
+        interpreter=interpreter,
+        needed=needed,
+        glibc_versions=glibc_versions,
+    )

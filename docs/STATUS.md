@@ -38,7 +38,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 | P1 Windows 环境入口 | 显式解释器、隔离 venv、版本/架构预检与新环境复现 | 无 SDK/模型依赖 | complete |
 | P2 外部资产核验 | 来源/版本/哈希登记、随包通知、只读核验与合成测试 | P1；不改 H2 synthetic 合同 | complete |
 | P3 QAIRT 本地准备 | 官方 SDK、独立环境、Windows 工具冒烟和能力表 | P1/P2；合法包、登录和版本条件 | not_started |
-| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；合成解析已完成，真实清单仍需 P3 | in_progress |
+| P4 ABI 离线检查 | PE/ELF 解析、目标库候选清单、错误输入测试 | P2；合成解析及 ELF class/endian 覆盖已完成，真实清单仍需 P3 | in_progress |
 | P5 自有小图 CPU 基准 | 小型 ONNX、三类输入、独立预期与明确容差 | P1/P2；无 SDK/模型依赖 | complete |
 | P6 小图 QAIRT 转换 | W8A8 转换/量化、实际 encoding 检查、产物与日志绑定 | P3/P5；HTP prepare 条件不足可后置 | not_started |
 | P7 FSR v07 提取 | 匹配源材料接收、提取封装和上游交叉自检 | P2；必须取得并核验具体 AMD 文件 | not_started |
@@ -53,7 +53,7 @@ M0 主机侧 schema、Linux 只读采集器、离线校验/脱敏、fixture 和 
 
 - H1–H4 Windows / CPU 队列已完成；这不改变后置 M0–M9 的设备门槛。
 - 下一批：P3，需要取得并登记合法 QAIRT 包、版本和本机支持条件后，才在独立环境做 Windows 工具冒烟；完成 P3 后再用 P4 检查实际候选库，目标 ABI 兼容性仍 unknown。
-- 当前最新记录：[P4 合成 PE/ELF 离线检查](validation/host/2026-09-21-p4-synthetic-abi-inspector.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
+- 当前最新记录：[P4 ELF32/64 与大小端覆盖](validation/host/2026-09-21-p4-elf-variants.md)；阶段规划见[无设备阶段二规划](validation/host/2026-09-20-host-preparation-plan.md)。
 - 设备与首个游戏不阻塞 P 队列。SDK/模型只在对应资产批次需要；缺少时推进独立分支，不重复请求掌机或自动安装 WSL/Linux。
 - 后续新增批次记录放 `docs/validation/host/`，本节保留最新链接和一个下一步，不累积长篇聊天摘要。
 
