@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -199,6 +200,43 @@ class SmallGraphTests(unittest.TestCase):
             wrong.write_bytes(model.SerializeToString())
             with self.assertRaisesRegex(small_graph.ReferenceError, "fixed P5 model"):
                 small_graph.export_calibration(wrong, root / "wrong-export")
+
+    def test_export_create_race_preserves_competing_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "export"
+            sentinel = output / "competitor.txt"
+            original_mkdir = Path.mkdir
+
+            def competing_mkdir(path, mode=0o777, parents=False, exist_ok=False):
+                if path == output:
+                    original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+                    sentinel.write_text("keep", encoding="utf-8")
+                return original_mkdir(
+                    path, mode=mode, parents=parents, exist_ok=exist_ok
+                )
+
+            with mock.patch.object(Path, "mkdir", new=competing_mkdir):
+                with self.assertRaisesRegex(
+                    small_graph.ReferenceError, "export directory already exists"
+                ):
+                    small_graph.export_calibration(
+                        small_graph.FIXTURE_PATH, output
+                    )
+
+            self.assertEqual("keep", sentinel.read_text(encoding="utf-8"))
+
+    def test_export_failure_removes_owned_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "export"
+            with mock.patch.object(
+                Path, "write_bytes", side_effect=OSError("injected write failure")
+            ):
+                with self.assertRaisesRegex(OSError, "injected write failure"):
+                    small_graph.export_calibration(
+                        small_graph.FIXTURE_PATH, output
+                    )
+
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

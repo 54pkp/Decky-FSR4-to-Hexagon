@@ -158,8 +158,15 @@ def export_calibration(model_path: Path, output_directory: Path) -> dict[str, ob
     if model_path.read_bytes() != model_bytes():
         raise ReferenceError("model bytes do not equal the fixed P5 model")
 
+    owns_output_directory = False
     try:
-        output_directory.mkdir(parents=False)
+        try:
+            output_directory.mkdir(parents=False)
+        except FileExistsError as exc:
+            raise ReferenceError(
+                f"export directory already exists: {output_directory}"
+            ) from exc
+        owns_output_directory = True
         cases: list[dict[str, object]] = []
         input_lines: list[str] = []
         for order, (case_name, value) in enumerate(fixed_inputs().items()):
@@ -193,7 +200,8 @@ def export_calibration(model_path: Path, output_directory: Path) -> dict[str, ob
         manifest_path.write_bytes((json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
         return manifest
     except Exception:
-        shutil.rmtree(output_directory, ignore_errors=True)
+        if owns_output_directory:
+            shutil.rmtree(output_directory, ignore_errors=True)
         raise
 
 
