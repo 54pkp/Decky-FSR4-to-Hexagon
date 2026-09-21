@@ -23,8 +23,13 @@ or other reparse point.
 
 Only `fsr4_quality_weights.npz`, `graph_spec.json`, and
 `intake_receipt.json` are published. The receipt binds the source and extractor
-URLs/commits to all input and output hashes. Generated artifacts remain ignored
-by the repository. Before publication the selected `--python` checks all 100
+URLs/commits to all input and output hashes. Receipt schema v2 also binds the
+selected interpreter hash and runtime identity, the imported NumPy version, the
+complete normalized extractor argv, and an exact `ALL GATES PASSED` stdout
+line from the pinned extractor. The environment is summarized both before and
+after extraction and any drift rejects publication. Ephemeral staging paths are
+represented by a hash-bound placeholder, never presented as reproducible input.
+Generated artifacts remain ignored by the repository. Before publication the selected `--python` checks all 100
 NPZ arrays without pickle/object dtypes, including the required pass-0 and scale
 table shapes/dtypes; the graph spec must have 11 bin tensors, 58 declarations,
 and 13 calls. Publication uses a completed same-parent staging directory and an

@@ -52,6 +52,8 @@ class IntakeContract:
     )
     validate_public_archive: bool = False
     spec_counts: tuple[tuple[str, int], ...] = ()
+    environment_packages: tuple[str, ...] = ()
+    extractor_stdout_markers: tuple[str, ...] = ()
 
 
 PUBLIC_CONTRACT = IntakeContract(
@@ -99,11 +101,38 @@ PUBLIC_CONTRACT = IntakeContract(
     ),
     validate_public_archive=True,
     spec_counts=(("bin_tensors", 11), ("decls", 58), ("calls", 13)),
+    environment_packages=("numpy",),
+    extractor_stdout_markers=("ALL GATES PASSED",),
 )
 
 
 class IntakeError(Exception):
     """A selected path, pinned input, extractor run, or output is invalid."""
+
+
+ENVIRONMENT_PROBE = r'''import importlib, importlib.metadata, json, platform, struct, sys, sysconfig
+requested = json.loads(sys.argv[1])
+packages = {}
+for name in requested:
+    try:
+        distribution_version = importlib.metadata.version(name)
+        module_version = str(importlib.import_module(name).__version__)
+    except Exception as exc:
+        packages[name] = {"error": f"{type(exc).__name__}: {exc}"}
+    else:
+        packages[name] = {
+            "distribution_version": distribution_version,
+            "module_version": module_version,
+        }
+print(json.dumps({
+    "implementation": platform.python_implementation(),
+    "version": platform.python_version(),
+    "platform": sysconfig.get_platform(),
+    "pointer_bits": struct.calcsize("P") * 8,
+    "executable": sys.executable,
+    "packages": packages,
+}, sort_keys=True))
+'''
 
 
 def _is_link_or_reparse(info: os.stat_result) -> bool:
@@ -181,6 +210,93 @@ def _verify_rule(path: Path, rule: FileRule, label: str) -> dict[str, object]:
     if digest != rule.sha256:
         raise IntakeError(f"{label} SHA-256 mismatch: expected {rule.sha256}, found {digest}")
     return {"path": rule.path, "byte_count": size, "sha256": digest}
+
+
+def _environment_summary(python: Path, packages: tuple[str, ...]) -> dict[str, object]:
+    if any(not isinstance(name, str) or not name or name.strip() != name for name in packages):
+        raise IntakeError("environment package names must be non-empty canonical strings")
+    if len(set(packages)) != len(packages):
+        raise IntakeError("environment package names must be unique")
+    executable_size, executable_hash, _ = _hash_file(python, capture=False)
+    try:
+        completed = subprocess.run(
+            [os.fspath(python), "-I", "-c", ENVIRONMENT_PROBE, json.dumps(list(packages))],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise IntakeError(f"selected Python environment could not be inspected: {exc}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()[-2000:]
+        raise IntakeError(f"selected Python environment inspection failed: {detail}")
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise IntakeError("selected Python environment inspection returned malformed JSON") from exc
+    required = {"implementation", "version", "platform", "pointer_bits", "executable", "packages"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise IntakeError("selected Python environment summary has missing or unexpected fields")
+    if (
+        not all(isinstance(value[key], str) and value[key] for key in ("implementation", "version", "platform", "executable"))
+        or not isinstance(value["pointer_bits"], int)
+        or value["pointer_bits"] <= 0
+        or not isinstance(value["packages"], dict)
+    ):
+        raise IntakeError("selected Python environment summary has malformed fields")
+    try:
+        reported_executable = _check_existing_path(Path(value["executable"]), directory=False, label="reported Python executable")
+        same_executable = os.path.samefile(python, reported_executable)
+    except OSError as exc:
+        raise IntakeError(f"cannot compare selected and reported Python executables: {exc}") from exc
+    if not same_executable:
+        raise IntakeError("selected Python reported a different executable")
+    package_values = value["packages"]
+    if set(package_values) != set(packages):
+        raise IntakeError("selected Python environment package summary is incomplete")
+    normalized_packages = []
+    for name in sorted(packages):
+        item = package_values[name]
+        if not isinstance(item, dict) or set(item) != {"distribution_version", "module_version"}:
+            raise IntakeError(f"selected Python environment package {name!r} is missing or malformed")
+        distribution_version = item["distribution_version"]
+        module_version = item["module_version"]
+        if not isinstance(distribution_version, str) or not distribution_version or module_version != distribution_version:
+            raise IntakeError(f"selected Python environment package {name!r} version is inconsistent")
+        normalized_packages.append({"name": name, "version": distribution_version})
+    return {
+        "python": {
+            "implementation": value["implementation"],
+            "version": value["version"],
+            "platform": value["platform"],
+            "pointer_bits": value["pointer_bits"],
+            "executable": {
+                "byte_count": executable_size,
+                "sha256": executable_hash,
+            },
+        },
+        "packages": normalized_packages,
+    }
+
+
+def _stdout_gate(stdout: str, markers: tuple[str, ...]) -> dict[str, object]:
+    if any(not isinstance(marker, str) or not marker or marker.strip() != marker or "\n" in marker or "\r" in marker for marker in markers):
+        raise IntakeError("extractor stdout markers must be non-empty single canonical lines")
+    if len(set(markers)) != len(markers):
+        raise IntakeError("extractor stdout markers must be unique")
+    lines = set(stdout.splitlines())
+    missing = [marker for marker in markers if marker not in lines]
+    if missing:
+        raise IntakeError(f"extractor stdout is missing exact success marker: {missing[0]!r}")
+    encoded = stdout.encode("utf-8")
+    return {
+        "required_exact_lines": list(markers),
+        "matched": True,
+        "byte_count": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }
 
 
 def _validate_archive(path: Path, python: Path, validate_public_semantics: bool) -> dict[str, object]:
@@ -305,9 +421,13 @@ def run_intake(sdk_root: Path, extractor: Path, python: Path, output: Path, cont
 
         environment = os.environ.copy()
         environment["FIDELITYFX_SDK_ROOT"] = os.fspath(isolated_sdk)
+        environment["PYTHONUTF8"] = "1"
+        environment["PYTHONIOENCODING"] = "utf-8"
+        before_environment = _environment_summary(python_path, contract.environment_packages)
+        extractor_argv = [os.fspath(python_path), "-I", os.fspath(isolated_script)]
         try:
             completed = subprocess.run(
-                [os.fspath(python_path), "-I", os.fspath(isolated_script)],
+                extractor_argv,
                 cwd=isolated_script.parent,
                 env=environment,
                 stdin=subprocess.DEVNULL,
@@ -321,6 +441,10 @@ def run_intake(sdk_root: Path, extractor: Path, python: Path, output: Path, cont
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout).strip()[-2000:]
             raise IntakeError(f"extractor failed with exit code {completed.returncode}: {detail}")
+        stdout_gate = _stdout_gate(completed.stdout, contract.extractor_stdout_markers)
+        after_environment = _environment_summary(python_path, contract.environment_packages)
+        if after_environment != before_environment:
+            raise IntakeError("selected Python/package environment drifted during extraction")
 
         artifacts = isolated_script.parents[1] / "artifacts"
         archive_path = artifacts / contract.archive_name
@@ -332,7 +456,7 @@ def run_intake(sdk_root: Path, extractor: Path, python: Path, output: Path, cont
             contract.spec_name: spec_receipt,
         }
         receipt = {
-            "schema_version": "p7-fsr-intake-receipt-v1",
+            "schema_version": "p7-fsr-intake-receipt-v2",
             "source": {"url": contract.source_url, "commit": contract.source_commit},
             "extractor": {
                 "url": contract.extractor_url,
@@ -342,6 +466,16 @@ def run_intake(sdk_root: Path, extractor: Path, python: Path, output: Path, cont
             },
             "inputs": input_receipts,
             "outputs": outputs,
+            "environment": before_environment,
+            "extractor_execution": {
+                "argv": [os.fspath(python_path), "-I", "<isolated-extractor>"],
+                "argv_bindings": {
+                    "0": "environment.python.executable",
+                    "2": "extractor",
+                },
+                "temporary_absolute_paths_recorded": False,
+                "stdout_gate": stdout_gate,
+            },
             "extraction_gate": "passed",
             "device_execution": "not_run",
         }

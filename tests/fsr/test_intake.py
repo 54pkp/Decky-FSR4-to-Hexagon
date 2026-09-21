@@ -7,12 +7,14 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 if os.fspath(REPOSITORY) not in sys.path:
     sys.path.insert(0, os.fspath(REPOSITORY))
 
+from tools.fsr import intake
 from tools.fsr.intake import FileRule, IntakeContract, IntakeError, run_intake
 
 
@@ -38,6 +40,7 @@ out.mkdir()
 with zipfile.ZipFile(out / "result.npz", "w") as archive:
     archive.writestr("array.npy", b"\\x93NUMPYfixture-array")
 (out / "spec.json").write_text(json.dumps({"kind": "fixture-v1"}), encoding="utf-8")
+print("FIXTURE GATE PASSED")
 '''
 
 FAILURE_EXTRACTOR = b'''import sys
@@ -51,6 +54,7 @@ out = Path(__file__).resolve().parents[1] / "artifacts"
 out.mkdir()
 (out / "result.npz").write_bytes(b"not-an-archive")
 (out / "spec.json").write_text(json.dumps({"kind": "wrong-fixture"}), encoding="utf-8")
+print("FIXTURE GATE PASSED")
 '''
 
 
@@ -90,6 +94,7 @@ if mutation == "bin-count": spec["bin_tensors"].pop()
 if mutation == "declaration-count": spec["decls"].append({{}})
 if mutation == "call-count": spec["calls"].pop()
 (out / "spec.json").write_text(json.dumps(spec), encoding="utf-8")
+print("FIXTURE GATE PASSED")
 '''.encode("utf-8")
 
 
@@ -141,6 +146,7 @@ class IntakeTests(unittest.TestCase):
             archive_name="result.npz",
             spec_name="spec.json",
             spec_markers=(("kind", "fixture-v1"),),
+            extractor_stdout_markers=("FIXTURE GATE PASSED",),
         )
 
     def execute(self, contract: IntakeContract):
@@ -163,6 +169,7 @@ class IntakeTests(unittest.TestCase):
                     ("decls", 58),
                     ("calls", 13),
                 ),
+                "environment_packages": ("numpy",),
             }
         )
 
@@ -182,6 +189,96 @@ class IntakeTests(unittest.TestCase):
             self.assertEqual(saved["outputs"][name]["byte_count"], len(data))
             self.assertEqual(saved["outputs"][name]["sha256"], digest(data))
         self.assertEqual(saved["device_execution"], "not_run")
+        self.assertEqual(saved["schema_version"], "p7-fsr-intake-receipt-v2")
+        self.assertEqual(saved["environment"]["packages"], [])
+        self.assertGreater(saved["environment"]["python"]["executable"]["byte_count"], 0)
+        self.assertRegex(saved["environment"]["python"]["executable"]["sha256"], r"^[0-9a-f]{64}$")
+        execution = saved["extractor_execution"]
+        self.assertEqual(execution["argv"], [os.path.abspath(sys.executable), "-I", "<isolated-extractor>"])
+        self.assertEqual(execution["argv_bindings"], {"0": "environment.python.executable", "2": "extractor"})
+        self.assertFalse(execution["temporary_absolute_paths_recorded"])
+        self.assertEqual(execution["stdout_gate"]["required_exact_lines"], ["FIXTURE GATE PASSED"])
+        self.assertTrue(execution["stdout_gate"]["matched"])
+
+    def test_complete_actual_extractor_argv_is_executed_and_bound_in_receipt(self):
+        actual_runs: list[list[str]] = []
+        real_run = intake.subprocess.run
+
+        def capture_run(argv, *args, **kwargs):
+            if len(argv) == 3 and argv[1] == "-I" and argv[2].endswith("build_weights.py"):
+                actual_runs.append(list(argv))
+            return real_run(argv, *args, **kwargs)
+
+        with mock.patch.object(intake.subprocess, "run", side_effect=capture_run):
+            receipt = self.execute(self.contract())
+        self.assertEqual(len(actual_runs), 1)
+        self.assertEqual(actual_runs[0][0:2], [os.path.abspath(sys.executable), "-I"])
+        self.assertTrue(Path(actual_runs[0][2]).is_absolute())
+        self.assertEqual(receipt["extractor_execution"]["argv"][0:2], actual_runs[0][0:2])
+        self.assertEqual(receipt["extractor_execution"]["argv"][2], "<isolated-extractor>")
+        self.assertEqual(receipt["extractor_execution"]["argv_bindings"]["2"], "extractor")
+
+    def test_missing_and_spoofed_stdout_markers_are_rejected_without_output(self):
+        for printed in ("", "prefix FIXTURE GATE PASSED suffix", "  FIXTURE GATE PASSED  "):
+            with self.subTest(printed=printed):
+                payload = SUCCESS_EXTRACTOR.replace(
+                    b'print("FIXTURE GATE PASSED")', f'print({printed!r})'.encode("ascii")
+                )
+                self.extractor.write_bytes(payload)
+                with self.assertRaisesRegex(IntakeError, "missing exact success marker"):
+                    self.execute(self.contract(extractor_payload=payload))
+                self.assertFalse(self.output.exists())
+
+    def test_missing_or_malformed_environment_summary_is_rejected_without_output(self):
+        cases = (
+            ({"version": "3.12"}, "missing or unexpected fields"),
+            ({
+                "implementation": "CPython",
+                "version": "3.12",
+                "platform": "win-amd64",
+                "pointer_bits": "64",
+                "executable": sys.executable,
+                "packages": {},
+            }, "malformed fields"),
+        )
+        for payload, diagnostic in cases:
+            with self.subTest(diagnostic=diagnostic):
+                completed = intake.subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+                with mock.patch.object(intake.subprocess, "run", return_value=completed):
+                    with self.assertRaisesRegex(IntakeError, diagnostic):
+                        intake._environment_summary(Path(sys.executable), ())
+                self.assertFalse(self.output.exists())
+
+        with mock.patch.object(
+            intake, "_environment_summary", side_effect=IntakeError("selected Python environment summary has missing fields")
+        ):
+            with self.assertRaisesRegex(IntakeError, "missing fields"):
+                self.execute(self.contract())
+        self.assertFalse(self.output.exists())
+
+    def test_python_environment_drift_is_rejected_without_output(self):
+        stable = intake._environment_summary(Path(sys.executable), ())
+        drifted = json.loads(json.dumps(stable))
+        drifted["python"]["version"] = "0.0-drifted"
+        with mock.patch.object(intake, "_environment_summary", side_effect=[stable, drifted]):
+            with self.assertRaisesRegex(IntakeError, "environment drifted"):
+                self.execute(self.contract())
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_numpy_environment_receipt_and_drift_are_enforced(self):
+        contract = self.semantic_contract("")
+        receipt = self.execute(contract)
+        self.assertEqual(receipt["environment"]["packages"], [{"name": "numpy", "version": _numpy.__version__}])
+        self.output.rename(self.root / "first-output")
+
+        stable = intake._environment_summary(Path(sys.executable), ("numpy",))
+        drifted = json.loads(json.dumps(stable))
+        drifted["packages"][0]["version"] = "0.0-drifted"
+        with mock.patch.object(intake, "_environment_summary", side_effect=[stable, drifted]):
+            with self.assertRaisesRegex(IntakeError, "environment drifted"):
+                self.execute(contract)
+        self.assertFalse(self.output.exists())
 
     def test_truncated_input_is_rejected_without_output(self):
         self.asset.write_bytes(self.payload[:-1])
