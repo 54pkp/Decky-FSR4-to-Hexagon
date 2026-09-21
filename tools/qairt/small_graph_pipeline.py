@@ -19,6 +19,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
@@ -536,21 +537,25 @@ def run_pipeline(
             "not_run": {"device": "not_run", "htp_execution": "not_run", "fsr": "not_run", "game": "not_run"},
             "scope": "synthetic small graph on Windows QNN CPU; not FSR, HTP, device, or game validation",
         }
-        staging = output.parent / (output.name + ".publishing")
-        if staging.exists():
-            raise PipelineError(f"publication staging path already exists: {staging}")
         current_output_parent = os.stat(output.parent, follow_symlinks=False)
         current_work = os.stat(work, follow_symlinks=False)
         if _is_reparse(current_output_parent) or (current_output_parent.st_dev, current_output_parent.st_ino) != output_parent_identity:
             raise PipelineError("output parent identity changed during pipeline")
         if _is_reparse(current_work) or (current_work.st_dev, current_work.st_ino) != work_identity:
             raise PipelineError("work root identity changed during pipeline")
+        staging: Path | None = None
         try:
-            shutil.copytree(work, staging)
+            staging = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{output.name}.publishing-", dir=output.parent
+                )
+            )
+            shutil.copytree(work, staging, dirs_exist_ok=True)
             (staging / "success_receipt.json").write_bytes((json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8"))
             os.replace(staging, output)
         except Exception:
-            shutil.rmtree(staging, ignore_errors=True)
+            if staging is not None:
+                shutil.rmtree(staging, ignore_errors=True)
             raise
         return receipt
     except PipelineError:

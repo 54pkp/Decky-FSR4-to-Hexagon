@@ -39,7 +39,7 @@ $python = 'C:\Path With Spaces\Python312\python.exe'
 
 ## Current operational warnings
 
-- P6 publication still has a reproduced concurrent-cleanup ownership defect. Until fixed, never run two tasks against the same publication name; use a fresh, exclusive directory for every run. R01 fixed the P5 create race with a deterministic regression.
+- R01 and R02 fixed the P5 create race and P6 publication race with deterministic regressions. Malformed P6 encoding parsing remains open for R03, and every run still requires a separate work directory.
 - M0 still has check-then-replace path races and can leave partial redaction output after a failure. Do not run it in an untrusted directory or treat failed output as publishable.
 - Every artifact-producing command should use a new path. Recheck input and output SHA-256 values against its receipt afterward. Device, game, performance, and quality conclusions remain `not_run`.
 

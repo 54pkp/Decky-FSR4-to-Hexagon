@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -234,6 +235,59 @@ class PipelineTests(unittest.TestCase):
             root = Path(directory); fx = Fixture(root); fx.work = root / "bad work"
             with self.assertRaisesRegex(pipeline.PipelineError, "whitespace"):
                 fx.run()
+
+    def test_losing_publisher_preserves_winner_and_cleans_private_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loser_root = root / "loser"
+            winner_root = root / "winner"
+            loser_root.mkdir()
+            winner_root.mkdir()
+            loser = Fixture(loser_root)
+            winner = Fixture(winner_root)
+            shared_output = root / "output"
+            loser.output = shared_output
+            winner.output = shared_output
+            unrelated = root / ".output.publishing-unrelated"
+            unrelated.mkdir()
+            sentinel = unrelated / "keep.txt"
+            sentinel.write_text("keep", encoding="utf-8")
+            original_replace = pipeline.os.replace
+            staging_paths = []
+            winner_files = {}
+
+            def let_second_publisher_win(source, destination):
+                staging_paths.append(Path(source))
+                self.assertEqual(shared_output, Path(destination))
+                if len(staging_paths) == 1:
+                    winner.run()
+                    winner_files.update(
+                        (str(path.relative_to(shared_output)), path.read_bytes())
+                        for path in shared_output.rglob("*")
+                        if path.is_file()
+                    )
+                return original_replace(source, destination)
+
+            with mock.patch.object(
+                pipeline.os, "replace", side_effect=let_second_publisher_win
+            ):
+                with self.assertRaises(pipeline.PipelineError):
+                    loser.run()
+
+            self.assertEqual(2, len(staging_paths))
+            self.assertNotEqual(staging_paths[0], staging_paths[1])
+            self.assertTrue((shared_output / "success_receipt.json").is_file())
+            self.assertEqual(
+                winner_files,
+                {
+                    str(path.relative_to(shared_output)): path.read_bytes()
+                    for path in shared_output.rglob("*")
+                    if path.is_file()
+                },
+            )
+            self.assertFalse(any(path.exists() for path in staging_paths))
+            self.assertFalse((loser.work / "success_receipt.json").exists())
+            self.assertEqual("keep", sentinel.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

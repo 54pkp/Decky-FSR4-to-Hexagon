@@ -79,12 +79,12 @@ install the QAIRT or reference dependencies, so both explicit interpreters must
 already be provisioned. After success, verify `success_receipt.json` and its
 bound file hashes before retaining the result.
 
-Known issues: concurrent runs sharing the same output name can race through the
-common `.publishing` path and one failure may delete the other run's staging
-directory. Metadata validation also currently accepts some malformed bitwidth
-and boolean representations. Until those defects are fixed, use a unique work
-and output name per run, do not run two jobs against the same target, and do not
-treat acceptance of hand-edited encoding JSON as trustworthy evidence.
+Each publisher now uses a private, randomly named staging directory beside the
+target. If another publisher wins the final rename, the loser removes only its
+own staging directory and preserves the winner's output and receipt. Metadata
+validation still accepts some malformed bitwidth and boolean representations;
+until R03 closes that issue, do not treat acceptance of hand-edited encoding
+JSON as trustworthy evidence. Unique work roots remain mandatory.
 
 The P6 success receipt hashes the selected interpreter executables, scripts,
 inputs, logs, and outputs, but it does not bind the complete installed Python
