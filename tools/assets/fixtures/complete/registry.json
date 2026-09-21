@@ -1,0 +1,42 @@
+{
+  "schema_version": "external-asset-registry-v1",
+  "component": "synthetic-complete-package",
+  "source_url": "https://example.invalid/synthetic-complete-package",
+  "version_or_commit": "fixture-v1",
+  "platform": "host-test-only",
+  "architecture": "architecture-independent",
+  "purpose": "Exercise offline registry verification without real SDK or model assets.",
+  "notice": {
+    "status": "present",
+    "path": "NOTICE.txt"
+  },
+  "files": [
+    {
+      "logical_name": "synthetic_payload",
+      "path": "payload/model.bin",
+      "status": "present",
+      "sha256": "cf0b9e12761ff5473bf9e24549e267cc42c13672b9e69163d6115744662b904f",
+      "byte_count": 24,
+      "purpose": "Small deterministic payload for hash and size verification.",
+      "missing_reason": null
+    },
+    {
+      "logical_name": "notice",
+      "path": "NOTICE.txt",
+      "status": "present",
+      "sha256": "5091c516b9c4b40b1374245ceb60c136ff805af087f4f1f5698ed255bfe46f6f",
+      "byte_count": 82,
+      "purpose": "Synthetic fixture notice.",
+      "missing_reason": null
+    },
+    {
+      "logical_name": "optional_debug_symbols",
+      "path": "optional/debug.sym",
+      "status": "missing",
+      "sha256": null,
+      "byte_count": null,
+      "purpose": "Demonstrate an honest non-blocking missing record.",
+      "missing_reason": "The synthetic fixture intentionally does not include optional debug symbols."
+    }
+  ]
+}

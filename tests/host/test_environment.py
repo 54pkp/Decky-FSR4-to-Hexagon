@@ -215,12 +215,16 @@ class HostEnvironmentTests(unittest.TestCase):
                 info, created = host_environment.initialise(selected, target)
 
             self.assertEqual("AMD64", info["architecture"])
-            self.assertEqual(host_environment._venv_python(target.resolve()), created)
+            # Windows may spell the same temporary directory with either its
+            # long name or an 8.3 alias; compare file identity, not spelling.
+            self.assertTrue(
+                os.path.samefile(host_environment._venv_python(target.resolve()), created)
+            )
             create_argv = calls[2][0]
             install_argv = calls[3][0]
             check_argv = calls[4][0]
             list_argv = calls[5][0]
-            self.assertEqual(str(target.resolve()), create_argv[-1])
+            self.assertTrue(os.path.samefile(target.resolve(), create_argv[-1]))
             self.assertEqual(str(created), install_argv[0])
             self.assertEqual(str(host_environment.REQUIREMENTS), install_argv[-1])
             self.assertEqual(
