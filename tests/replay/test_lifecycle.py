@@ -742,6 +742,147 @@ class LifecycleTests(unittest.TestCase):
         context.submit(second, history, vectors)
         self.assertEqual(second, context.active_identity)
 
+    def test_all_eight_active_and_isolated_retained_states_hold_resources(self):
+        states = (
+            ("executing", False, False),
+            ("executing_timed_out", False, True),
+            ("pending_consumption", True, False),
+            ("pending_consumption_timed_out", True, True),
+        )
+        identity_replacements = {
+            "service_instance_id": "wrong-service",
+            "session_id": "wrong-session",
+            "context_id": "wrong-context",
+            "frame_id": "2",
+            "history_generation": "1",
+            "model_manifest_id": "wrong-manifest",
+        }
+
+        for isolated in (False, True):
+            for state, completed, timed_out in states:
+                with self.subTest(location="isolated" if isolated else "active", state=state):
+                    context = self.new_context()
+                    request = copy.deepcopy(self.scenario["request"])
+                    self.submit(context, request)
+                    capacity = context.retained_resource_capacity_cells
+                    if completed:
+                        context.complete(request)
+                    if timed_out:
+                        context.timeout(request)
+                    self.assertEqual(state, context.state)
+                    if isolated:
+                        context.reset(f"isolate-{state}", "0")
+                        self.assertIsNone(context.active_identity)
+                        self.assertEqual(1, context.isolated_resource_count)
+                    else:
+                        self.assertEqual(request, context.active_identity)
+                        self.assertEqual(0, context.isolated_resource_count)
+                    self.assertEqual(1, context.retained_resource_count)
+                    self.assertEqual(capacity, context.retained_resource_capacity_cells)
+
+                    reclaim = context.result_consumed if completed else context.complete
+                    for field, replacement in identity_replacements.items():
+                        wrong = copy.deepcopy(request)
+                        wrong[field] = replacement
+                        if completed:
+                            self.assert_invalid(lambda wrong=wrong: reclaim(wrong, True), "result_consumed")
+                        else:
+                            self.assert_invalid(lambda wrong=wrong: reclaim(wrong), "completion")
+                        self.assertEqual(1, context.retained_resource_count)
+                        self.assertEqual(capacity, context.retained_resource_capacity_cells)
+
+                    if completed:
+                        context.result_consumed(request, True)
+                    else:
+                        context.complete(request)
+                        if not timed_out and not isolated:
+                            context.result_consumed(request, True)
+                    self.assertEqual(0, context.retained_resource_count)
+                    self.assertEqual(0, context.retained_resource_capacity_cells)
+
+    def test_large_integer_values_do_not_inflate_logical_cell_capacity(self):
+        context = self.new_context()
+        huge = 1 << 100_000
+        history = copy.deepcopy(self.scenario["history"])
+        for row in history:
+            for index in range(len(row)):
+                row[index] = huge if index % 2 == 0 else -huge
+        context.submit(
+            self.scenario["request"], history, self.scenario["motion_vectors"]
+        )
+        logical_cells = sum(map(len, history)) + sum(
+            map(len, self.scenario["expected_output"])
+        )
+        self.assertEqual(logical_cells, context.retained_resource_capacity_cells)
+        output = context.complete(self.scenario["request"])
+        self.assertTrue(any(abs(value) == huge for row in output for value in row if value is not None))
+        self.assertEqual(logical_cells, context.retained_resource_capacity_cells)
+
+    def test_active_plus_isolated_capacity_accepts_exact_boundary_and_rejects_excess(self):
+        def payload(width, height):
+            history = [[0 for _ in range(width)] for _ in range(height)]
+            vectors = [[[0, 0] for _ in range(width)] for _ in range(height)]
+            return history, vectors
+
+        def isolated_context():
+            context = self.new_context()
+            first_history, first_vectors = payload(32, 63)
+            context.submit(self.scenario["request"], first_history, first_vectors)
+            context.timeout(self.scenario["request"])
+            context.reset("boundary-reset", "0")
+            self.assertEqual(4032, context.isolated_resource_capacity_cells)
+            return context
+
+        exact = isolated_context()
+        second = copy.deepcopy(self.scenario["request"])
+        second["frame_id"] = "2"
+        second["history_generation"] = "1"
+        exact_history, exact_vectors = payload(40, 52)
+        exact.submit(second, exact_history, exact_vectors)
+        self.assertEqual(1, exact.isolated_resource_count)
+        self.assertEqual(2, exact.retained_resource_count)
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_CAPACITY_CELLS,
+            exact.retained_resource_capacity_cells,
+        )
+
+        excess = isolated_context()
+        excess_history, excess_vectors = payload(40, 53)
+        before_capacity = excess.retained_resource_capacity_cells
+        self.assert_invalid(
+            lambda: excess.submit(second, excess_history, excess_vectors),
+            "resource capacity budget",
+        )
+        self.assertIsNone(excess.active_identity)
+        self.assertEqual(1, excess.retained_resource_count)
+        self.assertEqual(before_capacity, excess.retained_resource_capacity_cells)
+
+    def test_permanently_in_flight_requests_keep_deterministic_backpressure(self):
+        context = self.new_context()
+        for generation in range(lifecycle.MAX_RETAINED_RESOURCE_COUNT):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            context.timeout(request)
+            context.reset(f"permanent-{generation}", str(generation))
+
+        rejected = copy.deepcopy(self.scenario["request"])
+        rejected["frame_id"] = str(lifecycle.MAX_RETAINED_RESOURCE_COUNT + 1)
+        rejected["history_generation"] = context.history_generation
+        retained_capacity = context.retained_resource_capacity_cells
+        for attempt in range(16):
+            with self.subTest(attempt=attempt):
+                self.assert_invalid(
+                    lambda: self.submit(context, rejected), "resource count budget"
+                )
+                self.assertEqual(
+                    lifecycle.MAX_RETAINED_RESOURCE_COUNT,
+                    context.retained_resource_count,
+                )
+                self.assertEqual(retained_capacity, context.retained_resource_capacity_cells)
+                self.assertIsNone(context.active_identity)
+
     def test_submit_rejects_each_fixed_identity_mismatch(self):
         replacements = {
             "service_instance_id": "other-service",
