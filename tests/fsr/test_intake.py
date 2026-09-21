@@ -16,6 +16,18 @@ if os.fspath(REPOSITORY) not in sys.path:
 from tools.fsr.intake import FileRule, IntakeContract, IntakeError, run_intake
 
 
+try:
+    import numpy as _numpy  # noqa: F401 - capability probe for the child interpreter
+except ImportError:
+    NUMPY_AVAILABLE = False
+else:
+    NUMPY_AVAILABLE = True
+
+NUMPY_SEMANTIC_REASON = (
+    "R09 semantic NPZ fixture tests require NumPy in the isolated fsr-extract environment"
+)
+
+
 SUCCESS_EXTRACTOR = b'''from pathlib import Path
 import json, os, zipfile
 source = Path(os.environ["FIDELITYFX_SDK_ROOT"]) / "fixture" / "input.dat"
@@ -44,6 +56,41 @@ out.mkdir()
 
 def digest(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def semantic_extractor(mutation: str) -> bytes:
+    return f'''from pathlib import Path
+import json, numpy as np
+out = Path(__file__).resolve().parents[1] / "artifacts"
+out.mkdir()
+mutation = {mutation!r}
+arrays = {{f"filler_{{index:03d}}": np.zeros((1,), dtype=np.float32) for index in range(98)}}
+arrays["pass0_weight_fkyxc"] = np.zeros((16, 2, 2, 8), dtype=np.float32)
+arrays["bin_scale_table"] = np.zeros((77,), dtype=np.float32)
+if mutation == "array-count-99": arrays.pop("filler_000")
+if mutation == "array-count-101": arrays["extra"] = np.zeros((1,), dtype=np.float32)
+if mutation == "missing-pass0": arrays["replacement-pass0"] = arrays.pop("pass0_weight_fkyxc")
+if mutation == "pass0-shape": arrays["pass0_weight_fkyxc"] = np.zeros((16, 2, 2, 7), dtype=np.float32)
+if mutation == "pass0-dtype": arrays["pass0_weight_fkyxc"] = np.zeros((16, 2, 2, 8), dtype=np.int8)
+if mutation == "missing-scale": arrays["replacement-scale"] = arrays.pop("bin_scale_table")
+if mutation == "scale-shape": arrays["bin_scale_table"] = np.zeros((76,), dtype=np.float32)
+if mutation == "scale-dtype": arrays["bin_scale_table"] = np.zeros((77,), dtype=np.float64)
+if mutation == "object-dtype": arrays["filler_000"] = np.array([{{"bad": "object"}}], dtype=object)
+np.savez(out / "result.npz", **arrays)
+spec = {{
+    "preset": "quality",
+    "model": "fsr4_model_v07_i8",
+    "bin_tensors": [{{}} for _ in range(11)],
+    "decls": [{{}} for _ in range(58)],
+    "calls": [{{}} for _ in range(13)],
+}}
+if mutation == "preset-marker": spec["preset"] = "balanced"
+if mutation == "model-marker": spec["model"] = "fsr4_model_v08_i8"
+if mutation == "bin-count": spec["bin_tensors"].pop()
+if mutation == "declaration-count": spec["decls"].append({{}})
+if mutation == "call-count": spec["calls"].pop()
+(out / "spec.json").write_text(json.dumps(spec), encoding="utf-8")
+'''.encode("utf-8")
 
 
 class IntakeTests(unittest.TestCase):
@@ -98,6 +145,26 @@ class IntakeTests(unittest.TestCase):
 
     def execute(self, contract: IntakeContract):
         return run_intake(self.sdk, self.extractor, Path(sys.executable), self.output, contract)
+
+    def semantic_contract(self, mutation: str) -> IntakeContract:
+        extractor_payload = semantic_extractor(mutation)
+        self.extractor.write_bytes(extractor_payload)
+        base = self.contract(extractor_payload=extractor_payload)
+        return IntakeContract(
+            **{
+                **base.__dict__,
+                "spec_markers": (
+                    ("preset", "quality"),
+                    ("model", "fsr4_model_v07_i8"),
+                ),
+                "validate_public_archive": True,
+                "spec_counts": (
+                    ("bin_tensors", 11),
+                    ("decls", 58),
+                    ("calls", 13),
+                ),
+            }
+        )
 
     def test_success_publishes_only_validated_outputs_and_complete_receipt(self):
         receipt = self.execute(self.contract())
@@ -157,6 +224,73 @@ class IntakeTests(unittest.TestCase):
         self.extractor.write_bytes(INVALID_OUTPUT_EXTRACTOR)
         with self.assertRaisesRegex(IntakeError, "valid NPZ/ZIP"):
             self.execute(self.contract(extractor_payload=INVALID_OUTPUT_EXTRACTOR))
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_graph_preset_and_model_markers_are_independently_rejected(self):
+        cases = (
+            ("preset-marker", "marker 'preset' must equal 'quality'"),
+            ("model-marker", "marker 'model' must equal 'fsr4_model_v07_i8'"),
+        )
+        for mutation, diagnostic in cases:
+            with self.subTest(mutation=mutation):
+                with self.assertRaisesRegex(IntakeError, diagnostic):
+                    self.execute(self.semantic_contract(mutation))
+                self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_graph_bin_declaration_and_call_counts_are_independently_rejected(self):
+        cases = (
+            ("bin-count", "'bin_tensors' count must equal 11, found 10"),
+            ("declaration-count", "'decls' count must equal 58, found 59"),
+            ("call-count", "'calls' count must equal 13, found 12"),
+        )
+        for mutation, diagnostic in cases:
+            with self.subTest(mutation=mutation):
+                with self.assertRaisesRegex(IntakeError, diagnostic):
+                    self.execute(self.semantic_contract(mutation))
+                self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_public_npz_requires_exactly_one_hundred_arrays(self):
+        for mutation, found in (("array-count-99", 99), ("array-count-101", 101)):
+            with self.subTest(mutation=mutation):
+                with self.assertRaisesRegex(
+                    IntakeError, f"expected 100 arrays, found {found}"
+                ):
+                    self.execute(self.semantic_contract(mutation))
+                self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_pass0_required_array_name_shape_and_dtype_are_independently_rejected(self):
+        cases = (
+            ("missing-pass0", "missing required array pass0_weight_fkyxc"),
+            ("pass0-shape", r"pass0_weight_fkyxc expected shape=\[16, 2, 2, 8\] dtype=float32"),
+            ("pass0-dtype", r"pass0_weight_fkyxc expected shape=\[16, 2, 2, 8\] dtype=float32"),
+        )
+        for mutation, diagnostic in cases:
+            with self.subTest(mutation=mutation):
+                with self.assertRaisesRegex(IntakeError, diagnostic):
+                    self.execute(self.semantic_contract(mutation))
+                self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_scale_required_array_name_shape_and_dtype_are_independently_rejected(self):
+        cases = (
+            ("missing-scale", "missing required array bin_scale_table"),
+            ("scale-shape", r"bin_scale_table expected shape=\[77\] dtype=float32"),
+            ("scale-dtype", r"bin_scale_table expected shape=\[77\] dtype=float32"),
+        )
+        for mutation, diagnostic in cases:
+            with self.subTest(mutation=mutation):
+                with self.assertRaisesRegex(IntakeError, diagnostic):
+                    self.execute(self.semantic_contract(mutation))
+                self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(NUMPY_AVAILABLE, NUMPY_SEMANTIC_REASON)
+    def test_object_dtype_is_rejected_without_publication(self):
+        with self.assertRaisesRegex(IntakeError, "Object arrays cannot be loaded|object dtype"):
+            self.execute(self.semantic_contract("object-dtype"))
         self.assertFalse(self.output.exists())
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
