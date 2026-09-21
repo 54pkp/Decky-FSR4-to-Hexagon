@@ -9,6 +9,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 import zipfile
@@ -87,6 +88,56 @@ class Fixture:
 class ProbeTests(unittest.TestCase):
     def run_fixture(self, fx: Fixture):
         return probe.probe(fx.archive, fx.root, Path(sys.executable), fx.output, fx.profile)
+
+    def inherited_pipe_process(self, root: Path, *, leader_waits: bool):
+        ready = root / "descendant.ready"
+        stop = root / "descendant.stop"
+        done = root / "descendant.done"
+        descendant = (
+            "import os,time; from pathlib import Path; "
+            f"ready=Path({str(ready)!r}); stop=Path({str(stop)!r}); done=Path({str(done)!r}); "
+            "ready.write_text(str(os.getpid()),encoding='ascii'); "
+            "\ntry:\n"
+            " while not stop.exists(): time.sleep(.02)\n"
+            "finally:\n"
+            " done.write_text('done',encoding='ascii')"
+        )
+        leader = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable,'-c',{descendant!r}]); "
+            + ("time.sleep(30)" if leader_waits else "sys.exit(0)")
+        )
+        timeout_started = []
+
+        def ready_hook(_process):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if ready.is_file():
+                    timeout_started.append(time.monotonic())
+                    return
+                time.sleep(.01)
+            self.fail("descendant did not publish the inherited-pipe readiness marker")
+
+        def cleanup():
+            stop.write_text("stop", encoding="ascii")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if done.is_file():
+                    return
+                time.sleep(.02)
+            if ready.is_file():
+                pid = ready.read_text(encoding="ascii").strip()
+                subprocess.run(
+                    ["taskkill", "/PID", pid, "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=5,
+                )
+            self.fail("descendant did not exit after the bounded cleanup signal")
+
+        return leader, ready_hook, cleanup, timeout_started
 
     def test_success_and_capability_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,6 +222,52 @@ class ProbeTests(unittest.TestCase):
         result = probe._run([sys.executable, "-c", f"import sys;sys.stdout.buffer.write(b'x'*{len(data)})"], os.environ)
         self.assertTrue(result["stdout"]["truncated"])
         self.assertEqual(result["stdout"]["sha256"], hashlib.sha256(data).hexdigest())
+
+    @unittest.skipUnless(os.name == "nt", "Windows inherited-pipe regression")
+    def test_timeout_with_descendant_pipe_holder_returns_with_capture_diagnostic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            leader, ready_hook, cleanup, timeout_started = self.inherited_pipe_process(
+                Path(tmp), leader_waits=True
+            )
+            try:
+                with self.assertRaises(probe.ProbeError) as caught:
+                    probe._run(
+                        [sys.executable, "-c", leader],
+                        os.environ,
+                        0.05,
+                        _ready_hook=ready_hook,
+                    )
+                elapsed = time.monotonic() - timeout_started[0]
+            finally:
+                cleanup()
+        self.assertLess(elapsed, 1.5)
+        self.assertIn("direct process terminated", str(caught.exception))
+        self.assertIn("stdout_capture=pending", str(caught.exception))
+        self.assertIn("stderr_capture=pending", str(caught.exception))
+        self.assertIn("possible descendant pipe holder", str(caught.exception))
+        self.assertIn("capture is incomplete", str(caught.exception))
+
+    @unittest.skipUnless(os.name == "nt", "Windows inherited-pipe regression")
+    def test_zero_exit_with_descendant_pipe_holder_is_not_reported_as_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            leader, ready_hook, cleanup, timeout_started = self.inherited_pipe_process(
+                Path(tmp), leader_waits=False
+            )
+            try:
+                with self.assertRaises(probe.ProbeError) as caught:
+                    probe._run(
+                        [sys.executable, "-c", leader],
+                        os.environ,
+                        1,
+                        _ready_hook=ready_hook,
+                    )
+                elapsed = time.monotonic() - timeout_started[0]
+            finally:
+                cleanup()
+        self.assertLess(elapsed, 1.5)
+        self.assertIn("direct process exited 0", str(caught.exception))
+        self.assertIn("capture incomplete", str(caught.exception))
+        self.assertIn("refusing to report probe success", str(caught.exception))
 
     def test_abi_error_and_existing_output_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

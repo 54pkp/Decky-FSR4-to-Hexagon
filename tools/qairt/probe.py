@@ -17,7 +17,8 @@ import subprocess
 import sys
 import tempfile
 import threading
-from typing import Any, Mapping, Sequence
+import time
+from typing import Any, Callable, Mapping, Sequence
 import zipfile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +32,7 @@ from tools.host.environment import HostEnvironmentError, preflight
 RECEIPT_VERSION = "qairt-windows-host-probe-v1"
 MAX_CAPTURE_BYTES = 64 * 1024
 TIMEOUT_SECONDS = 120
+CAPTURE_DRAIN_GRACE_SECONDS = 0.25
 VENDOR_ENV = ("QAIRT_SDK_ROOT", "QNN_SDK_ROOT", "SNPE_ROOT", "AISW_SDK_ROOT", "PYTHONPATH")
 
 
@@ -347,27 +349,97 @@ def _environment(root: Path, python: Path) -> dict[str, str]:
     return env
 
 
-def _run(argv: Sequence[str], env: Mapping[str, str], timeout: int = TIMEOUT_SECONDS) -> dict[str, Any]:
+def _run(
+    argv: Sequence[str],
+    env: Mapping[str, str],
+    timeout: int = TIMEOUT_SECONDS,
+    *,
+    _ready_hook: Callable[[subprocess.Popen[bytes]], None] | None = None,
+) -> dict[str, Any]:
     logical = list(argv)
     captures: dict[str, dict[str, Any]] = {}
+    capture_errors: dict[str, str] = {}
     def drain(name: str, pipe: Any) -> None:
         digest = hashlib.sha256(); kept = bytearray(); total = 0
-        for chunk in iter(lambda: pipe.read(8192), b""):
-            total += len(chunk); digest.update(chunk)
-            if len(kept) < MAX_CAPTURE_BYTES:
-                kept.extend(chunk[: MAX_CAPTURE_BYTES - len(kept)])
-        captures[name] = {"text": bytes(kept).decode("utf-8", errors="replace"), "captured_bytes": len(kept), "total_bytes": total, "truncated": total > len(kept), "sha256": digest.hexdigest()}
+        try:
+            for chunk in iter(lambda: pipe.read(8192), b""):
+                total += len(chunk); digest.update(chunk)
+                if len(kept) < MAX_CAPTURE_BYTES:
+                    kept.extend(chunk[: MAX_CAPTURE_BYTES - len(kept)])
+            captures[name] = {"text": bytes(kept).decode("utf-8", errors="replace"), "captured_bytes": len(kept), "total_bytes": total, "truncated": total > len(kept), "sha256": digest.hexdigest()}
+        except OSError as exc:
+            capture_errors[name] = f"{type(exc).__name__}: {exc}"
+        finally:
+            # The draining thread owns its pipe. In particular, do not close a
+            # BufferedReader from the coordinator while this thread is blocked
+            # in read(), because that close can itself wait on the reader lock.
+            pipe.close()
     try:
         process = subprocess.Popen(logical, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         assert process.stdout is not None and process.stderr is not None
-        threads = [threading.Thread(target=drain, args=("stdout", process.stdout)), threading.Thread(target=drain, args=("stderr", process.stderr))]
+        threads = [
+            threading.Thread(
+                target=drain,
+                args=("stdout", process.stdout),
+                name="qairt-probe-stdout",
+                daemon=True,
+            ),
+            threading.Thread(
+                target=drain,
+                args=("stderr", process.stderr),
+                name="qairt-probe-stderr",
+                daemon=True,
+            ),
+        ]
         for thread in threads: thread.start()
+        if _ready_hook is not None:
+            try:
+                # Test-only synchronization: the production path supplies no
+                # hook. The timeout budget intentionally begins after a test
+                # has proved that its descendant inherited the capture pipes.
+                _ready_hook(process)
+            except BaseException:
+                process.kill()
+                process.wait()
+                raise
         try:
             code = process.wait(timeout=timeout); timed_out = False
         except subprocess.TimeoutExpired:
             process.kill(); process.wait(); code = None; timed_out = True
-        for thread in threads: thread.join()
-        process.stdout.close(); process.stderr.close()
+        drain_deadline = time.monotonic() + CAPTURE_DRAIN_GRACE_SECONDS
+        for thread in threads:
+            thread.join(max(0.0, drain_deadline - time.monotonic()))
+        capture_states = {
+            name: (
+                "pending" if thread.is_alive()
+                else "failed" if name in capture_errors
+                else "complete"
+            )
+            for name, thread in zip(("stdout", "stderr"), threads)
+        }
+        pending = [name for name, state in capture_states.items() if state == "pending"]
+        if pending:
+            rendered = " ".join(
+                f"{name}_capture={capture_states[name]}" for name in ("stdout", "stderr")
+            )
+            if timed_out:
+                raise ProbeError(
+                    f"required probe timed out: {logical[1]}; direct process terminated; "
+                    f"{rendered}; possible descendant pipe holder remains, so capture is "
+                    "incomplete"
+                )
+            raise ProbeError(
+                f"required probe capture incomplete after direct process exited {code}: "
+                f"{logical[1]}; {rendered}; possible descendant pipe holder remains; "
+                "refusing to report probe success"
+            )
+        failed = [name for name, state in capture_states.items() if state == "failed"]
+        if failed:
+            detail = "; ".join(f"{name}: {capture_errors[name]}" for name in failed)
+            raise ProbeError(
+                f"required probe capture failed: {logical[1]}; {detail}; "
+                "refusing to report probe success"
+            )
     except OSError as exc:
         raise ProbeError(f"could not invoke required probe {logical[1]!r}: {exc}") from exc
     result = {"argv": logical, "exit_code": code, "timed_out": timed_out, "stdout": captures["stdout"], "stderr": captures["stderr"]}
