@@ -62,8 +62,16 @@ Run the environments explicitly from the repository root:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 .\local\venvs\reference\Scripts\python.exe -m unittest discover -s tests/reference -p "test_*.py" -v
 .\local\venvs\fsr-extract\Scripts\python.exe -m unittest discover -s tests/fsr -p "test_*.py" -v
-.\local\venvs\qairt-2.49.0.260730\Scripts\python.exe -m unittest tests.qairt.test_probe tests.abi.test_inspector tests.abi.test_inventory tests.qairt.test_small_graph_pipeline -v
+.\local\venvs\qairt-2.49.0.260730\Scripts\python.exe -m unittest tests.qairt.test_environment tests.qairt.test_probe tests.abi.test_inspector tests.abi.test_inventory tests.qairt.test_small_graph_pipeline -v
 ```
+
+Or run all four explicit environments in fixed order and publish a machine-readable report:
+
+```powershell
+.\.venv\Scripts\python.exe tools\host\verify_environments.py --baseline-python .\.venv\Scripts\python.exe --reference-python .\local\venvs\reference\Scripts\python.exe --fsr-python .\local\venvs\fsr-extract\Scripts\python.exe --qairt-python .\local\venvs\qairt-2.49.0.260730\Scripts\python.exe --output artifacts\multi-venv-NEW.json
+```
+
+Missing/invalid environments are `not_run` and yield exit 2; started suites that fail or time out are `failed` and yield exit 1. Later suites still run. Skip counts remain separate from passes; exit 0 means all four suites completed without test failures, not that every assertion ran. Parent tests are classified once even when `subTest` emits multiple events; the report preserves the raw event counts separately. The aggregate totals are execution observations and include overlap between suites. The runner never installs dependencies or creates environments. Its timeout only establishes the direct worker result—not descendant-process quiescence—and output hashes/tails cover the fixed file-size snapshot selected after that worker ends; later descendant output is excluded and counted separately when observed.
 
 The specialized commands complement the baseline result; they do not turn its
 skips into one automatic 233/233 run. None of these host commands is a device,
