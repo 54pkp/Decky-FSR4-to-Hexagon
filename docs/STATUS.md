@@ -21,11 +21,11 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 活动任务与状态规则
 
-下一批：**R10b——固化P8对P7 accepted receipt的摘要与来源/输出绑定。**
+下一批：**R11——将P9a历史附加检查固化为自动测试。**
 
 | 队列 | 当前实现状态 | 选择条件 |
 | --- | --- | --- |
-| R：审计修复、可复现性与回归 | R01–R10a `complete`；其余叶子项 `not_started` | 当前优先；R10b起，独立项可按依赖选择 |
+| R：审计修复、可复现性与回归 | R01–R10b `complete`；其余叶子项 `not_started` | 当前优先；R11起，独立项可按依赖选择 |
 | F：真实FSR CPU/ONNX/QAIRT离线 | 所有叶子项 `not_started` | 满足所选批次R修复及资产/参考依赖后选取 |
 | E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
 | D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
@@ -49,6 +49,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 | R08c | `complete` | [公开Windows CI合同](validation/host/2026-09-22-r08c-public-windows-ci.md)；可公开重建的Python3.10.11/3.12.10 x64云端双job通过 |
 | R09 | `complete` | [P7 graph/NPZ语义负例](validation/host/2026-09-22-r09-p7-semantic-negatives.md)；fsr-extract 14个独立语义场景实跑 |
 | R10a | `complete` | [P7环境收据与stdout gate](validation/host/2026-09-22-r10a-p7-environment-receipt.md)；真实v07重跑生成v2 receipt |
+| R10b | `complete` | [P8 accepted receipt信任链](validation/host/2026-09-22-r10b-p8-accepted-receipt.md)；固定R10a摘要并拒绝旧/自洽伪收据，仅为NumPy host CPU pass0 |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -58,7 +59,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 - P6的小数/错误类型bitwidth和非法布尔metadata已由R03改为fail-closed；固定SDK小写字符串及原生布尔保留回归。
 - M0 evidence路径检查/open竞争及公开输出中途失败残留已由R04/R05关闭；POSIX和设备侧仍未验证。
 - P6固定SDK快照和环境收据绑定已由R06b/R06c关闭；P7/P8来源信任与环境收据、旧artifact索引仍需加固。
-- P7 graph marker/count及NPZ 100-array/shape/dtype独立语义负例已由R09固化；P7的Python/NumPy环境、完整argv与stdout gate收据已由R10a固化，P8消费者信任链仍待R10b。P9部分历史附加检查未固化；多venv聚合检查已由R08a固化。
+- P7 graph marker/count及NPZ 100-array/shape/dtype独立语义负例已由R09固化；P7环境/argv/stdout收据及P8对其固定摘要、来源和输出的信任链已由R10a/R10b固化。P9部分历史附加检查未固化；多venv聚合检查已由R08a固化。
 - P3后代管道超时的Windows有界返回与fail-closed诊断已由R08b关闭；不保证后代静止或进程树终止。P4 POSIX发布竞态及Linux特有行为仍需对应批次核查。
 - 公开Windows x64 CI合同已由R08c固化；ARM64/Linux、私有多venv及设备仍为`not_run`，实际GitHub-hosted结果以push后Actions为准。
 - 固定SDK清单有3项包内缺件、3个超限大库未解析；实际设备匹配unknown。详细范围和修复归属见两个计划。
@@ -67,7 +68,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 最近验证快照与环境
 
-原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R10a后当前本机基线为306项、251 pass / 55 skipped；需NumPy的R09/R10a方法在公开基线准确skip，在fsr-extract环境实跑。R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。专用环境结果须单列，不能把skip写成pass。
+原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R10b后当前本机基线为309项、251 pass / 58 skipped；需NumPy的R09/R10a/R10b方法在公开基线准确skip，在fsr-extract环境实跑。R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。专用环境结果须单列，不能把skip写成pass。
 
 - P3真实快照冒烟、P4真实ZIP清单、P7重新提取通过；完整QAIRT ZIP哈希匹配。
 - P5三例误差：0 / 0 / 1.1920928955078125e-07。
@@ -76,7 +77,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
 
-最近记录：[R10a P7环境收据与stdout gate](validation/host/2026-09-22-r10a-p7-environment-receipt.md)；前一批：[R09 P7 graph/NPZ语义负例](validation/host/2026-09-22-r09-p7-semantic-negatives.md)。
+最近记录：[R10b P8 accepted receipt信任链](validation/host/2026-09-22-r10b-p8-accepted-receipt.md)；前一批：[R10a P7环境收据与stdout gate](validation/host/2026-09-22-r10a-p7-environment-receipt.md)。
 
 ## 最终里程碑
 

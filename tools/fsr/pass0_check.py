@@ -26,6 +26,11 @@ from tools.fsr.intake import IntakeError, _check_existing_path, _hash_file
 
 
 P7_SOURCE_COMMIT = "c5e34b4b7128ffeb152f80cbdb6d715d577ec289"
+P7_SOURCE_URL = "https://github.com/Rolaand-Jayz/FSR-4.0.2-reference"
+P7_EXTRACTOR_URL = "https://github.com/puzzled-pancake/fsr4-hexagon"
+P7_EXTRACTOR_SHA256 = "73e5533bda45d17f84d2d81315c4152cb912d809a648f63fe06ec2e026f5d31f"
+P7_EXTRACTOR_BYTE_COUNT = 15762
+P7_ACCEPTED_RECEIPT_SHA256 = "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b"
 SIMULATOR_COMMIT = "8c7a972ab70e5693828a856da71ce711232af463"
 SIMULATOR_SHA256 = "e82d407f26d4cd22d7b10d25a5f5d53e236febf98414946ecba32dee1377c0fe"
 SIMULATOR_URL = "https://github.com/puzzled-pancake/fsr4-hexagon"
@@ -44,6 +49,12 @@ class Pass0CheckError(Exception):
 @dataclass(frozen=True)
 class Pass0Contract:
     source_commit: str = P7_SOURCE_COMMIT
+    source_url: str = P7_SOURCE_URL
+    extractor_url: str = P7_EXTRACTOR_URL
+    extractor_commit: str = SIMULATOR_COMMIT
+    extractor_sha256: str = P7_EXTRACTOR_SHA256
+    extractor_byte_count: int = P7_EXTRACTOR_BYTE_COUNT
+    accepted_p7_receipt_sha256: str = P7_ACCEPTED_RECEIPT_SHA256
     simulator_commit: str = SIMULATOR_COMMIT
     simulator_sha256: str = SIMULATOR_SHA256
     max_lsb_error: int = MAX_LSB_ERROR
@@ -101,17 +112,58 @@ def _verify_p7(
     archive_path = _safe_file(p7, NPZ_NAME, "P7 weights")
     graph_path = _safe_file(p7, GRAPH_NAME, "P7 graph")
     receipt, receipt_hash = _read_json(receipt_path, MAX_RECEIPT_BYTES, "P7 receipt")
-    if receipt.get("schema_version") != "p7-fsr-intake-receipt-v1" or receipt.get("extraction_gate") != "passed":
-        raise Pass0CheckError("P7 receipt schema or extraction gate mismatch")
+    if receipt.get("schema_version") != "p7-fsr-intake-receipt-v2":
+        raise Pass0CheckError("P7 receipt is not the required R10a v2 accepted-receipt schema")
+    if receipt.get("extraction_gate") != "passed":
+        raise Pass0CheckError("P7 receipt extraction gate is not passed")
     source = receipt.get("source")
     extractor = receipt.get("extractor")
-    if not isinstance(source, dict) or source.get("commit") != contract.source_commit:
-        raise Pass0CheckError("P7 receipt source commit mismatch")
-    if not isinstance(extractor, dict) or extractor.get("commit") != contract.simulator_commit:
-        raise Pass0CheckError("P7 receipt extractor/simulator commit mismatch")
+    expected_source = {"url": contract.source_url, "commit": contract.source_commit}
+    if source != expected_source:
+        raise Pass0CheckError("P7 receipt source URL/commit binding mismatch")
+    expected_extractor = {
+        "url": contract.extractor_url,
+        "commit": contract.extractor_commit,
+        "byte_count": contract.extractor_byte_count,
+        "sha256": contract.extractor_sha256,
+    }
+    if extractor != expected_extractor:
+        raise Pass0CheckError("P7 receipt extractor URL/commit/content binding mismatch")
+    environment = receipt.get("environment")
+    if not isinstance(environment, dict) or not isinstance(environment.get("python"), dict):
+        raise Pass0CheckError("P7 v2 receipt environment binding is missing")
+    packages = environment.get("packages")
+    if (
+        not isinstance(packages, list)
+        or len(packages) != 1
+        or not isinstance(packages[0], dict)
+        or packages[0].get("name") != "numpy"
+        or not isinstance(packages[0].get("version"), str)
+        or not packages[0]["version"]
+    ):
+        raise Pass0CheckError("P7 v2 receipt NumPy environment binding is missing or malformed")
+    execution = receipt.get("extractor_execution")
+    stdout_gate = execution.get("stdout_gate") if isinstance(execution, dict) else None
+    if (
+        not isinstance(execution, dict)
+        or execution.get("temporary_absolute_paths_recorded") is not False
+        or execution.get("argv_bindings") != {"0": "environment.python.executable", "2": "extractor"}
+        or not isinstance(execution.get("argv"), list)
+        or len(execution["argv"]) != 3
+        or execution["argv"][1:] != ["-I", "<isolated-extractor>"]
+        or not isinstance(stdout_gate, dict)
+        or stdout_gate.get("matched") is not True
+        or stdout_gate.get("required_exact_lines") != ["ALL GATES PASSED"]
+    ):
+        raise Pass0CheckError("P7 v2 receipt extractor execution/stdout binding is missing or malformed")
     outputs = receipt.get("outputs")
-    if not isinstance(outputs, dict):
-        raise Pass0CheckError("P7 receipt outputs are missing")
+    if not isinstance(outputs, dict) or set(outputs) != {NPZ_NAME, GRAPH_NAME}:
+        raise Pass0CheckError("P7 receipt output binding must contain exactly the weights and graph")
+    if receipt_hash != contract.accepted_p7_receipt_sha256:
+        raise Pass0CheckError(
+            "P7 receipt SHA-256 is not the known accepted R10a receipt: "
+            f"expected {contract.accepted_p7_receipt_sha256}, found {receipt_hash}"
+        )
     snapshots: dict[str, tuple[bytes, str]] = {}
     for name, path in ((NPZ_NAME, archive_path), (GRAPH_NAME, graph_path)):
         entry = outputs.get(name)

@@ -41,7 +41,13 @@ or performance.
 
 `pass0_check.py` consumes an explicit P7 publication directory and the pinned
 upstream `fsr4_sim.py`. Before importing the simulator it verifies the P7
-receipt and both artifact hashes, plus the simulator SHA-256 for upstream commit
+receipt is the accepted R10a v2 receipt with SHA-256
+`b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b`.
+It also verifies that receipt's exact source URL/commit, extractor
+URL/commit/content identity, environment/stdout gates, two output entries, and
+both selected artifact hashes. Merely self-consistent replacement receipts and
+the older wrapper/validated/v1 receipts are rejected. The simulator SHA-256 is
+separately pinned for upstream commit
 `8c7a972ab70e5693828a856da71ce711232af463`. It runs a fixed 4x6x8 float16 HWC
 feature sample (seven non-zero feature lanes and the required zero lane), then
 compares upstream `pass0` with a separate scalar FKYXC implementation. The
@@ -52,24 +58,25 @@ a finite non-zero value.
 
 ```powershell
 .\local\venvs\fsr-extract\Scripts\python.exe tools/fsr/pass0_check.py `
-  --p7-directory artifacts/p7-fsr-v07-accepted `
+  --p7-directory artifacts/p7-fsr-v07-r10a-20260922 `
   --simulator research/fsr4-hexagon/model/sim/fsr4_sim.py `
   --output artifacts/p8-pass0-YOUR-NEW-RUN-ID-receipt.json
 ```
 
 The JSON receipt is published only after all checks pass and an existing output
 is never replaced. It records layouts, shape/dtype, quantization scale,
-input/output hashes, and the measured/tolerated LSB difference. This is only a
-host CPU cross-check of pass-0 using the same fixed public weight source. It is
-not an official golden, complete FSR4, ONNX, QNN/HTP, device, or game result.
+input/output hashes, the accepted P7 receipt hash, and the measured/tolerated
+LSB difference. This is only a NumPy host-CPU cross-check of pass-0 using the
+same fixed public weight source. It is not an official golden, complete FSR4,
+ONNX, QNN/HTP, device, or game result.
 
 The output parent must already exist and every run must use a new `.json` path.
-Do not use or overwrite the local legacy
-`artifacts/p8-pass0-receipt.json`: it is an older intermediate receipt with a
-different tolerance and fewer gates. The audited current P8 receipt has SHA-256
-`4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6`;
-recompute the selected P7 receipt, weights, graph, simulator, and new output
-hashes rather than trusting a filename.
+Do not use or overwrite the local legacy `artifacts/p8-pass0-receipt.json`.
+That file and the previously audited P8 receipt with SHA-256
+`4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6`
+are historical and invalid for the R10b trust chain because they predate the
+accepted R10a P7 receipt. Generate a new P8 receipt; never trust an artifact
+directory name or an old internally consistent receipt.
 
 `pass0` is only the FP16 eight-channel preprocessing convolution that produces
 the INT8 16-channel network input. The simulator's pass1–13 graph is not invoked

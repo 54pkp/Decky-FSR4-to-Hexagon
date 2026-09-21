@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 import py_compile
 import sys
@@ -67,6 +68,12 @@ class Pass0CheckTests(unittest.TestCase):
         self.output = self.root / "p8.json"
         self.contract = Pass0Contract(
             source_commit="source-fixture",
+            source_url="https://example.invalid/source",
+            extractor_url="https://example.invalid/extractor",
+            extractor_commit="sim-fixture",
+            extractor_sha256=hashlib.sha256(SIMULATOR).hexdigest(),
+            extractor_byte_count=len(SIMULATOR),
+            accepted_p7_receipt_sha256="0" * 64,
             simulator_commit="sim-fixture",
             simulator_sha256=hashlib.sha256(SIMULATOR).hexdigest(),
             max_lsb_error=0,
@@ -92,19 +99,40 @@ class Pass0CheckTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def write_receipt(self, **changes) -> None:
+    def write_receipt(self, *, accept: bool = True, **changes) -> None:
         receipt = {
-            "schema_version": "p7-fsr-intake-receipt-v1",
+            "schema_version": "p7-fsr-intake-receipt-v2",
             "extraction_gate": "passed",
-            "source": {"commit": "source-fixture"},
-            "extractor": {"commit": "sim-fixture"},
+            "source": {"url": "https://example.invalid/source", "commit": "source-fixture"},
+            "extractor": {
+                "url": "https://example.invalid/extractor",
+                "commit": "sim-fixture",
+                "byte_count": len(SIMULATOR),
+                "sha256": hashlib.sha256(SIMULATOR).hexdigest(),
+            },
+            "environment": {
+                "python": {"version": "fixture"},
+                "packages": [{"name": "numpy", "version": np.__version__}],
+            },
+            "extractor_execution": {
+                "argv": ["fixture-python", "-I", "<isolated-extractor>"],
+                "argv_bindings": {"0": "environment.python.executable", "2": "extractor"},
+                "temporary_absolute_paths_recorded": False,
+                "stdout_gate": {
+                    "matched": True,
+                    "required_exact_lines": ["ALL GATES PASSED"],
+                },
+            },
             "outputs": {},
         }
         for name in (NPZ_NAME, GRAPH_NAME):
             path = self.p7 / name
             receipt["outputs"][name] = {"byte_count": path.stat().st_size, "sha256": digest(path)}
         receipt.update(changes)
-        (self.p7 / P7_RECEIPT_NAME).write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_path = self.p7 / P7_RECEIPT_NAME
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        if accept:
+            self.contract = replace(self.contract, accepted_p7_receipt_sha256=digest(receipt_path))
 
     def execute(self, **kwargs):
         return run_pass0_check(self.p7, self.simulator, self.output, contract=self.contract, **kwargs)
@@ -128,11 +156,12 @@ class Pass0CheckTests(unittest.TestCase):
         self.assertIsInstance(receipt["output"]["positive_saturation_count"], int)
         self.assertEqual(receipt["parameters"]["quantization_scale"], float(np.float32(0.025)))
         self.assertEqual(receipt["limitations"]["official_golden"], "not_available")
+        self.assertEqual(receipt["p7"]["receipt"]["sha256"], self.contract.accepted_p7_receipt_sha256)
 
     def test_receipt_or_artifact_hash_mismatch_is_rejected(self):
         with self.subTest("receipt"):
-            self.write_receipt(schema_version="wrong")
-            with self.assertRaisesRegex(Pass0CheckError, "schema or extraction gate"):
+            self.write_receipt(schema_version="p7-fsr-intake-receipt-v1")
+            with self.assertRaisesRegex(Pass0CheckError, "required R10a v2"):
                 self.execute()
         self.write_receipt()
         with (self.p7 / GRAPH_NAME).open("ab") as stream:
@@ -141,6 +170,41 @@ class Pass0CheckTests(unittest.TestCase):
             with self.assertRaisesRegex(Pass0CheckError, "receipt/artifact hash mismatch"):
                 self.execute()
         self.assertFalse(self.output.exists())
+
+    def test_internally_self_consistent_unaccepted_v2_is_rejected(self):
+        original_accepted_digest = self.contract.accepted_p7_receipt_sha256
+        archive = self.p7 / NPZ_NAME
+        with np.load(archive, allow_pickle=False) as source:
+            values = {name: np.array(source[name], copy=True) for name in source.files}
+        values["pass0_bias"][0] += np.float32(0.125)
+        np.savez(archive, **values)
+        self.write_receipt(accept=False)
+        with self.assertRaisesRegex(Pass0CheckError, "not the known accepted R10a receipt"):
+            self.execute()
+        self.assertEqual(self.contract.accepted_p7_receipt_sha256, original_accepted_digest)
+        self.assertFalse(self.output.exists())
+
+    def test_old_wrapper_and_validated_receipt_schemas_are_rejected(self):
+        for schema in ("p7-fsr-intake-wrapper-v1", "p7-fsr-intake-validated-v1"):
+            with self.subTest(schema=schema):
+                self.write_receipt(schema_version=schema)
+                with self.assertRaisesRegex(Pass0CheckError, "required R10a v2"):
+                    self.execute()
+                self.assertFalse(self.output.exists())
+
+    def test_source_extractor_and_output_bindings_are_independently_required(self):
+        cases = (
+            ({"source": {"url": "https://example.invalid/wrong", "commit": "source-fixture"}}, "source URL/commit"),
+            ({"extractor": {"url": "https://example.invalid/extractor", "commit": "sim-fixture"}}, "extractor URL/commit/content"),
+            ({"outputs": {}}, "output binding"),
+        )
+        for changes, diagnostic in cases:
+            with self.subTest(diagnostic=diagnostic):
+                self.write_receipt(**changes)
+                with self.assertRaisesRegex(Pass0CheckError, diagnostic):
+                    self.execute()
+                self.assertFalse(self.output.exists())
+        self.write_receipt()
 
     def test_wrong_simulator_is_rejected(self):
         self.simulator.write_bytes(SIMULATOR + b"# changed\n")
@@ -168,6 +232,12 @@ class Pass0CheckTests(unittest.TestCase):
 
         self.contract = Pass0Contract(
             source_commit="source-fixture",
+            source_url="https://example.invalid/source",
+            extractor_url="https://example.invalid/extractor",
+            extractor_commit="sim-fixture",
+            extractor_sha256=hashlib.sha256(SIMULATOR).hexdigest(),
+            extractor_byte_count=len(SIMULATOR),
+            accepted_p7_receipt_sha256=self.contract.accepted_p7_receipt_sha256,
             simulator_commit="sim-fixture",
             simulator_sha256=hashlib.sha256(source).hexdigest(),
             max_lsb_error=0,
