@@ -21,11 +21,11 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 活动任务与状态规则
 
-下一批：**R08c——增加不依赖私有SDK/资产的公开Windows CI。**
+下一批：**R09——补P7 graph/NPZ独立语义负例。**
 
 | 队列 | 当前实现状态 | 选择条件 |
 | --- | --- | --- |
-| R：审计修复、可复现性与回归 | R01–R08b `complete`；其余叶子项 `not_started` | 当前优先；R08c起，独立项可按依赖选择 |
+| R：审计修复、可复现性与回归 | R01–R08c `complete`；其余叶子项 `not_started` | 当前优先；R09起，独立项可按依赖选择 |
 | F：真实FSR CPU/ONNX/QAIRT离线 | 所有叶子项 `not_started` | 满足所选批次R修复及资产/参考依赖后选取 |
 | E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
 | D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
@@ -46,6 +46,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 | R07 | `complete` | [Windows文件symlink能力探测](validation/host/2026-09-22-r07-windows-symlink-capability.md)；本机真实分支pass |
 | R08a | `complete` | [四venv聚合验证入口](validation/host/2026-09-22-r08a-multi-venv-verification.md)；4组completed，skip单列 |
 | R08b | `complete` | [P3后代管道超时回归](validation/host/2026-09-22-r08b-descendant-pipe-timeout.md)；Windows真实后代句柄回归，不声称进程树终止 |
+| R08c | `complete` | [公开Windows CI合同](validation/host/2026-09-22-r08c-public-windows-ci.md)；Python3.10/3.12.14 x64，云端首次运行待push后观察 |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -57,13 +58,14 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 - P6固定SDK快照和环境收据绑定已由R06b/R06c关闭；P7/P8来源信任与环境收据、旧artifact索引仍需加固。
 - P7/P9部分历史附加检查未固化；多venv聚合检查已由R08a固化。Windows普通文件symlink的陈旧固定skip已由R07关闭。
 - P3后代管道超时的Windows有界返回与fail-closed诊断已由R08b关闭；不保证后代静止或进程树终止。P4 POSIX发布竞态及Linux特有行为仍需对应批次核查。
+- 公开Windows x64 CI合同已由R08c固化；ARM64/Linux、私有多venv及设备仍为`not_run`，实际GitHub-hosted结果以push后Actions为准。
 - 固定SDK清单有3项包内缺件、3个超限大库未解析；实际设备匹配unknown。详细范围和修复归属见两个计划。
 
 这些是未修问题，不因本文更新而关闭。历史下载、Python3.12/jsonschema、ONNX/protobuf缺失已解决，不继续当成当前阻塞。
 
 ## 最近验证快照与环境
 
-原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R08b后当前基线为286项、238 pass / 48 skipped；R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。原Windows普通文件symlink固定skip在本机能力探测成功并实跑通过。专用环境结果仍须单列，不能把skip写成pass。
+原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续R批次持续增加回归。R08c后当前本机基线为294项、246 pass / 48 skipped；R08a本机四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠。原Windows普通文件symlink固定skip在本机能力探测成功并实跑通过。专用环境结果仍须单列，不能把skip写成pass。
 
 - P3真实快照冒烟、P4真实ZIP清单、P7重新提取通过；完整QAIRT ZIP哈希匹配。
 - P5三例误差：0 / 0 / 1.1920928955078125e-07。
@@ -72,7 +74,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
 
-最近记录：[R08b P3后代管道超时回归](validation/host/2026-09-22-r08b-descendant-pipe-timeout.md)；前一批：[R08a 四venv聚合验证入口](validation/host/2026-09-22-r08a-multi-venv-verification.md)。
+最近记录：[R08c 公开Windows CI合同](validation/host/2026-09-22-r08c-public-windows-ci.md)；前一批：[R08b P3后代管道超时回归](validation/host/2026-09-22-r08b-descendant-pipe-timeout.md)。
 
 ## 最终里程碑
 

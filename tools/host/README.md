@@ -76,3 +76,17 @@ Missing/invalid environments are `not_run` and yield exit 2; started suites that
 The specialized commands complement the baseline result; they do not turn its
 skips into one automatic 233/233 run. None of these host commands is a device,
 HTP, complete FSR4, or game test.
+
+## Public Windows CI
+
+`.github/workflows/windows-public.yml` rebuilds only the public baseline on
+GitHub-hosted Windows x64. Its exact matrix is Python 3.10 (the repository
+minimum) and Python 3.12.14 (the currently locked host version). It installs
+only `tools/device/requirements-host.txt`, runs `pip check`, and executes the
+verbose baseline `unittest` discovery command above. Capability skips remain
+visible as skips and are never added to the pass count.
+
+The workflow does not use secrets, ignored SDKs/assets, or the four-environment
+local runner. ARM64, Linux, the private reference/FSR/QAIRT environments, HTP,
+devices, and games remain `not_run`; use the explicit local multi-venv command
+for the separate private-environment evidence when those inputs exist.
