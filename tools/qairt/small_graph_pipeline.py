@@ -31,7 +31,8 @@ if str(REPO_ROOT) not in sys.path:
 from tools.qairt.probe import DEFAULT_PROFILE, ProbeError, _archive_runtime
 
 
-SCHEMA_VERSION = "qairt-small-graph-pipeline-v1"
+SCHEMA_VERSION = "qairt-small-graph-pipeline-v2"
+ENVIRONMENT_SCHEMA_VERSION = "p6-environment-v1"
 ATOL = 0.01
 RTOL = 0.0
 MAX_METADATA_BYTES = 8 * 1024 * 1024
@@ -59,6 +60,7 @@ class PipelineProfile:
     archive_root: str
     runtime_file_count: int
     runtime_uncompressed_bytes: int
+    p3_receipt_sha256: str
     model_sha256: str = P5_MODEL_SHA256
 
 
@@ -82,6 +84,7 @@ PINNED_PROFILE = PipelineProfile(
     DEFAULT_PROFILE.archive_root,
     DEFAULT_PROFILE.runtime_file_count,
     DEFAULT_PROFILE.runtime_uncompressed_bytes,
+    "6deb0d3b5da94d1786d91a07898f7a83ce1e85379d382dc7629ce4b1795150d1",
 )
 
 IMPORT_PROBE_PREFIX = "QAIRT_IMPORT_ORIGINS="
@@ -100,6 +103,16 @@ IMPORT_PROBE = (
     "items.append(str(pathlib.Path(module.__file__).resolve()))) "
     "for name,module in sorted(sys.modules.items()) if name=='qti' or name.startswith('qti.')];"
     f"print({IMPORT_PROBE_PREFIX!r}+json.dumps(sorted(set(items))))"
+)
+FRONTEND_REQUIREMENTS = Path(__file__).resolve().parent / "requirements-frontend.txt"
+REFERENCE_REQUIREMENTS = Path(__file__).resolve().parents[1] / "reference" / "requirements-reference.txt"
+ENVIRONMENT_PROBE = (
+    "import importlib.metadata as m,json,platform,struct,sys,sysconfig,pathlib;"
+    "items=[{'name':d.metadata['Name'],'version':d.version} for d in m.distributions()];"
+    "print(json.dumps({'implementation':platform.python_implementation(),"
+    "'version':platform.python_version(),'platform':sysconfig.get_platform(),"
+    "'pointer_bits':struct.calcsize('P')*8,'executable':str(pathlib.Path(sys.executable).resolve()),"
+    "'packages':items}))"
 )
 
 
@@ -149,6 +162,99 @@ def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, objec
         "bytes": path.stat().st_size,
         "sha256": _sha256(path),
     }
+
+
+def _normalise_package(name: object) -> str:
+    return re.sub(r"[-_.]+", "-", str(name)).lower()
+
+
+def _required_packages(path: Path) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise PipelineError(f"cannot read environment requirements {path}: {exc}") from exc
+    for number, raw in enumerate(lines, 1):
+        line = raw.partition("#")[0].strip()
+        match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)", line) if line else None
+        if not line:
+            continue
+        if match is None:
+            raise PipelineError(f"environment requirement line {number} is not exact")
+        key = _normalise_package(match.group(1))
+        if key in expected:
+            raise PipelineError(f"duplicate environment requirement: {match.group(1)}")
+        expected[key] = match.group(2)
+    return expected
+
+
+def _inspect_environment(python: Path, required: Mapping[str, str], label: str) -> dict[str, object]:
+    try:
+        probe = subprocess.run(
+            [str(python), "-I", "-c", ENVIRONMENT_PROBE], stdin=subprocess.DEVNULL,
+            text=True, capture_output=True, check=False, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise PipelineError(f"cannot inspect {label} environment: {exc}") from exc
+    if probe.returncode != 0:
+        raise PipelineError(f"{label} environment probe failed: {(probe.stderr or probe.stdout).strip()}")
+    try:
+        value = json.loads(probe.stdout)
+        packages = value["packages"]
+        if not isinstance(value, dict) or not isinstance(packages, list):
+            raise TypeError("invalid environment object")
+        installed: dict[str, str] = {}
+        for item in packages:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("version"), str):
+                raise TypeError("invalid installed package")
+            key = _normalise_package(item["name"])
+            if key in installed:
+                raise ValueError(f"duplicate installed package: {key}")
+            installed[key] = item["version"]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise PipelineError(f"{label} environment probe returned invalid data: {exc}") from exc
+    if (
+        value.get("implementation") != "CPython"
+        or value.get("version") != "3.12.14"
+        or str(value.get("platform")).lower() != "win-amd64"
+        or value.get("pointer_bits") != 64
+    ):
+        raise PipelineError(f"{label} environment requires CPython 3.12.14 win-amd64")
+    try:
+        if not os.path.samefile(python, Path(value["executable"])):
+            raise PipelineError(f"{label} environment reported a different interpreter")
+    except (KeyError, OSError, TypeError) as exc:
+        raise PipelineError(f"{label} environment reported an invalid interpreter: {exc}") from exc
+    for name, version in required.items():
+        if installed.get(name) != version:
+            raise PipelineError(
+                f"{label} package {name} expected {version}, found {installed.get(name, 'missing')}"
+            )
+    try:
+        checked = subprocess.run(
+            [str(python), "-I", "-m", "pip", "--isolated", "check"],
+            stdin=subprocess.DEVNULL, text=True, capture_output=True, check=False, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise PipelineError(f"cannot run {label} pip check: {exc}") from exc
+    if checked.returncode != 0:
+        raise PipelineError(f"{label} pip check failed: {(checked.stderr or checked.stdout).strip()}")
+    installed_list = [{"name": name, "version": installed[name]} for name in sorted(installed)]
+    installed_bytes = json.dumps(installed_list, separators=(",", ":")).encode("utf-8")
+    return {
+        "python": {
+            "implementation": "CPython", "version": "3.12.14",
+            "architecture": "AMD64", "platform": "win-amd64",
+            "executable": _file_record(python),
+        },
+        "required_packages": dict(sorted(required.items())),
+        "installed_packages": installed_list,
+        "installed_packages_sha256": hashlib.sha256(installed_bytes).hexdigest(),
+        "pip_check": "passed",
+    }
+
+
+EnvironmentInspector = Callable[[Path, Mapping[str, str], str], dict[str, object]]
 
 
 def _snapshot_manifest(root: Path) -> dict[str, tuple[int, str]]:
@@ -256,7 +362,8 @@ def _sdk_environment(sdk: Path, qairt_python: Path) -> dict[str, str]:
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key.upper() not in {"QAIRT_SDK_ROOT", "QNN_SDK_ROOT", "SNPE_ROOT", "AISW_SDK_ROOT", "PYTHONPATH", "PATH"}
+        if key.upper() not in {"QAIRT_SDK_ROOT", "QNN_SDK_ROOT", "SNPE_ROOT", "AISW_SDK_ROOT", "PATH", "VIRTUAL_ENV"}
+        and not key.upper().startswith("PYTHON")
     }
     environment.update(
         {
@@ -268,6 +375,8 @@ def _sdk_environment(sdk: Path, qairt_python: Path) -> dict[str, str]:
             "PATH": os.pathsep.join((str(bin_dir), str(lib_dir), str(scripts))),
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
             "VIRTUAL_ENV": str(scripts.parent),
         }
     )
@@ -278,9 +387,10 @@ def _reference_environment(reference_python: Path) -> dict[str, str]:
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key.upper() not in {"QAIRT_SDK_ROOT", "QNN_SDK_ROOT", "SNPE_ROOT", "AISW_SDK_ROOT", "PYTHONPATH", "PATH"}
+        if key.upper() not in {"QAIRT_SDK_ROOT", "QNN_SDK_ROOT", "SNPE_ROOT", "AISW_SDK_ROOT", "PATH", "VIRTUAL_ENV"}
+        and not key.upper().startswith("PYTHON")
     }
-    environment.update({"PATH": str(reference_python.parent), "VIRTUAL_ENV": str(reference_python.parent.parent), "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
+    environment.update({"PATH": str(reference_python.parent), "VIRTUAL_ENV": str(reference_python.parent.parent), "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1"})
     return environment
 
 
@@ -585,6 +695,7 @@ def run_pipeline(
     *,
     profile: PipelineProfile = PINNED_PROFILE,
     runner: Runner = _subprocess_runner,
+    environment_inspector: EnvironmentInspector = _inspect_environment,
 ) -> dict[str, object]:
     archive = Path(os.path.abspath(os.fspath(sdk_archive)))
     qairt_python = Path(os.path.abspath(os.fspath(qairt_python)))
@@ -613,6 +724,20 @@ def run_pipeline(
         raise PipelineError("P3 receipt SDK must be a JSON object")
     if receipt_sdk.get("version") != profile.version or receipt_sdk.get("build_id") != profile.build_id:
         raise PipelineError("P3 receipt SDK version/build mismatch")
+    p3_record = _file_record(p3_receipt)
+    if p3_record["sha256"] != profile.p3_receipt_sha256:
+        raise PipelineError("P3 receipt does not match the fixed accepted identity")
+    p3_python = receipt_value.get("python")
+    if not isinstance(p3_python, dict) or p3_python.get("version") != "3.12.14" or p3_python.get("architecture") != "AMD64":
+        raise PipelineError("P3 receipt Python identity mismatch")
+    p3_packages = receipt_value.get("vendor_required_packages")
+    expected_vendor = {
+        _normalise_package(name): version for name, version in DEFAULT_PROFILE.required_packages.items()
+    }
+    if not isinstance(p3_packages, dict) or {
+        _normalise_package(name): version for name, version in p3_packages.items()
+    } != expected_vendor:
+        raise PipelineError("P3 receipt vendor package identity mismatch")
     receipt_archive = receipt_value.get("archive")
     if not isinstance(receipt_archive, dict):
         raise PipelineError("P3 receipt archive must be a JSON object")
@@ -637,6 +762,12 @@ def run_pipeline(
         entry.get("path"): entry for entry in receipt_selected
         if isinstance(entry, dict)
     }
+    qairt_required = _required_packages(FRONTEND_REQUIREMENTS)
+    if {name: version for name, version in qairt_required.items() if name not in {"onnx", "protobuf"}} != expected_vendor:
+        raise PipelineError("QAIRT frontend requirements no longer match the P3 vendor profile")
+    reference_required = _required_packages(REFERENCE_REQUIREMENTS)
+    qairt_environment = environment_inspector(qairt_python, qairt_required, "QAIRT")
+    reference_environment = environment_inspector(reference_python, reference_required, "reference")
     try:
         sdk = Path(tempfile.mkdtemp(prefix="qairt-p6-sdk-"))
     except OSError as exc:
@@ -674,8 +805,6 @@ def run_pipeline(
         cpu = work / "cpu_outputs"
         cpu.mkdir()
         env = _sdk_environment(sdk, qairt_python)
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PYTHONNOUSERSITE"] = "1"
         roots = {
             "<sdk>": sdk, "<work>": work, "<qairt-python>": qairt_python,
             "<reference-python>": reference_python, "<model>": model,
@@ -692,7 +821,7 @@ def run_pipeline(
 
         stages.append(_run_stage(
             "reference_export",
-            [str(reference_python), str(reference_script), "export", "--model", str(model), "--output", str(export)],
+            [str(reference_python), "-s", str(reference_script), "export", "--model", str(model), "--output", str(export)],
             _reference_environment(reference_python), work, roots, runner,
         ))
         stages.append(_run_sdk_stage(
@@ -724,6 +853,12 @@ def run_pipeline(
         ))
         comparisons = _compare_cpu(export, cpu)
         _verify_snapshot(sdk, manifest)
+        if environment_inspector(qairt_python, qairt_required, "QAIRT") != qairt_environment:
+            raise PipelineError("QAIRT environment changed during pipeline")
+        if environment_inspector(reference_python, reference_required, "reference") != reference_environment:
+            raise PipelineError("reference environment changed during pipeline")
+        if _file_record(p3_receipt) != p3_record:
+            raise PipelineError("P3 receipt changed during pipeline")
         bound_files = {
             str(path.relative_to(work)): _file_record(path, work)
             for path in sorted(work.rglob("*")) if path.is_file()
@@ -732,6 +867,22 @@ def run_pipeline(
             "schema_version": SCHEMA_VERSION,
             "result": "passed",
             "backend": "QNN_CPU",
+            "environment": {
+                "schema_version": ENVIRONMENT_SCHEMA_VERSION,
+                "qairt": qairt_environment,
+                "reference": reference_environment,
+                "p3": {
+                    "receipt": p3_record,
+                    "schema_version": receipt_value["schema_version"],
+                    "profile": receipt_value["profile"],
+                    "archive": {
+                        "bytes": receipt_archive["bytes"],
+                        "sha256": receipt_archive["sha256"],
+                        "archive_root": receipt_archive["archive_root"],
+                        "runtime_snapshot": runtime_receipt,
+                    },
+                },
+            },
             "sdk": {
                 "product": "QAIRT", "version": profile.version,
                 "build_id": profile.build_id,
@@ -748,7 +899,7 @@ def run_pipeline(
                 "files": sdk_files,
             },
             "inputs": {
-                "model": _file_record(model), "p3_receipt": _file_record(p3_receipt),
+                "model": _file_record(model), "p3_receipt": p3_record,
                 "qairt_python": _file_record(qairt_python),
                 "reference_python": _file_record(reference_python),
                 "pipeline_script": _file_record(Path(__file__).resolve()),

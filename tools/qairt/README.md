@@ -123,9 +123,17 @@ symmetry accepts a JSON boolean or the fixed SDK's exact lowercase `"true"` /
 `"false"` strings. Other representations are rejected. Unique work roots
 remain mandatory.
 
-The P6 success receipt records the fixed archive, conservative runtime closure
+The current P6 v2 success receipt records the fixed archive, conservative runtime closure
 manifest digest, representative `qti.*` import origins, selected interpreter
-executables, scripts, inputs, logs, and outputs. The closure is an upper bound;
+executables, scripts, inputs, logs, and outputs. It also binds the accepted P3
+receipt identity and, for both QAIRT and reference interpreters, CPython
+3.12.14 AMD64, interpreter hash, exact direct requirements, the complete
+installed distribution list and its digest, and a passing `pip check`.
+Those environment snapshots are captured before execution and compared again
+before publication; drift aborts without a success receipt. Historical v1
+receipts do not contain this contract and are not current v2 evidence.
+
+The SDK closure is an upper bound;
 it does not claim that every file was loaded, identify Windows system-DLL
-resolution, or bind the complete installed Python package environment. The
-interpreter/package/P3 receipt binding remains R06c.
+resolution, lock transitive wheel contents, or prove future package-index
+availability.

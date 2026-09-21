@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest import mock
 import zipfile
+import subprocess
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -58,17 +60,18 @@ class Fixture:
         self.model = root / "model.onnx"
         for path in (self.qairt_python, self.reference_python, self.model):
             path.write_bytes(path.name.encode())
+        archive_size = self.archive.stat().st_size
+        archive_sha256 = hashlib.sha256(self.archive.read_bytes()).hexdigest()
+        runtime_count = len(payloads) - 1
+        runtime_bytes = sum(len(payload) for name, payload in payloads.items() if name != "sdk.yaml")
+        self.p3 = root / "p3.json"
+        self.p3.write_text(json.dumps({"schema_version": "qairt-windows-host-probe-v1", "profile": "QAIRT-2.49.0.260730-windows-x86_64", "sdk": {"version": "2.49.0", "build_id": "260730134355"}, "python": {"version": "3.12.14", "architecture": "AMD64"}, "vendor_required_packages": dict(pipeline.DEFAULT_PROFILE.required_packages), "archive": {"bytes": archive_size, "sha256": archive_sha256, "archive_root": self.archive_root, "runtime_snapshot": {"file_count": runtime_count, "uncompressed_bytes": runtime_bytes}}, "selected_files": [{"path": name, "bytes": size, "sha256": digest} for name, (size, digest) in files.items()]}), encoding="utf-8")
         self.profile = pipeline.PipelineProfile(
-            "2.49.0", "260730134355", files,
-            self.archive.stat().st_size,
-            hashlib.sha256(self.archive.read_bytes()).hexdigest(),
-            self.archive_root,
-            len(payloads) - 1,
-            sum(len(payload) for name, payload in payloads.items() if name != "sdk.yaml"),
+            "2.49.0", "260730134355", files, archive_size, archive_sha256,
+            self.archive_root, runtime_count, runtime_bytes,
+            hashlib.sha256(self.p3.read_bytes()).hexdigest(),
             hashlib.sha256(self.model.read_bytes()).hexdigest(),
         )
-        self.p3 = root / "p3.json"
-        self.p3.write_text(json.dumps({"schema_version": "qairt-windows-host-probe-v1", "profile": "QAIRT-2.49.0.260730-windows-x86_64", "sdk": {"version": "2.49.0", "build_id": "260730134355"}, "archive": {"bytes": self.profile.archive_size, "sha256": self.profile.archive_sha256, "archive_root": self.profile.archive_root, "runtime_snapshot": {"file_count": self.profile.runtime_file_count, "uncompressed_bytes": self.profile.runtime_uncompressed_bytes}}, "selected_files": [{"path": name, "bytes": size, "sha256": digest} for name, (size, digest) in files.items()]}), encoding="utf-8")
         self.work = root / "work"
         self.output = root / "output"
         self.calls: list[list[str]] = []
@@ -82,6 +85,24 @@ class Fixture:
         self.mutate_stage: str | None = None
         self.mutate_relative = "lib/python/qti/aisw/converters/onnx/onnx_to_ir.py"
         self.outside_import: Path | None = None
+        self.environment_calls: dict[str, int] = {"QAIRT": 0, "reference": 0}
+        self.environment_drift_label: str | None = None
+
+    def environment_inspector(self, python, required, label):
+        self.environment_calls[label] += 1
+        installed = dict(required)
+        installed["pip"] = "test"
+        if self.environment_drift_label == label and self.environment_calls[label] > 1:
+            installed["injected-drift"] = "1"
+        installed_list = [{"name": name, "version": installed[name]} for name in sorted(installed)]
+        payload = json.dumps(installed_list, separators=(",", ":")).encode("utf-8")
+        return {
+            "python": {"implementation": "CPython", "version": "3.12.14", "architecture": "AMD64", "platform": "win-amd64", "executable": pipeline._file_record(python)},
+            "required_packages": dict(sorted(required.items())),
+            "installed_packages": installed_list,
+            "installed_packages_sha256": hashlib.sha256(payload).hexdigest(),
+            "pip_check": "passed",
+        }
 
     def runner(self, argv, env, cwd, stdout, stderr, timeout):
         args = list(argv)
@@ -165,7 +186,7 @@ class Fixture:
         return 0
 
     def run(self):
-        return pipeline.run_pipeline(self.archive, self.qairt_python, self.reference_python, self.model, self.work, self.output, self.p3, profile=self.profile, runner=self.runner)
+        return pipeline.run_pipeline(self.archive, self.qairt_python, self.reference_python, self.model, self.work, self.output, self.p3, profile=self.profile, runner=self.runner, environment_inspector=self.environment_inspector)
 
 
 @unittest.skipUnless(
@@ -173,11 +194,79 @@ class Fixture:
     "requires the pinned QAIRT pipeline environment",
 )
 class PipelineTests(unittest.TestCase):
+    def test_stage_environments_remove_inherited_python_routing(self):
+        polluted = {
+            "PATH": "outside-path",
+            "VIRTUAL_ENV": "outside-venv",
+            "PYTHONHOME": "outside-home",
+            "PYTHONPATH": "outside-pythonpath",
+            "PYTHONUSERBASE": "outside-userbase",
+            "PYTHONSAFEPATH": "1",
+            "KEEP_ME": "preserved",
+        }
+        qairt_python = Path("C:/venvs/qairt/Scripts/python.exe")
+        reference_python = Path("C:/venvs/reference/Scripts/python.exe")
+        sdk = Path("C:/snapshot")
+        with mock.patch.dict(pipeline.os.environ, polluted, clear=True):
+            sdk_env = pipeline._sdk_environment(sdk, qairt_python)
+            reference_env = pipeline._reference_environment(reference_python)
+        for environment in (sdk_env, reference_env):
+            self.assertEqual("preserved", environment["KEEP_ME"])
+            self.assertNotIn("PYTHONHOME", environment)
+            self.assertNotIn("PYTHONUSERBASE", environment)
+            self.assertNotIn("PYTHONSAFEPATH", environment)
+            self.assertEqual("1", environment["PYTHONNOUSERSITE"])
+            self.assertEqual("1", environment["PYTHONDONTWRITEBYTECODE"])
+        self.assertEqual(str(sdk / "lib" / "python"), sdk_env["PYTHONPATH"])
+        self.assertNotIn("PYTHONPATH", reference_env)
+
+    def test_environment_probe_rejects_package_missing_drift_and_duplicate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            python = Path(directory) / "python.exe"
+            python.write_bytes(b"python")
+            base = {"implementation": "CPython", "version": "3.12.14", "platform": "win-amd64", "pointer_bits": 64, "executable": str(python.resolve())}
+            cases = (
+                ([{"name": "other", "version": "1"}], "found missing"),
+                ([{"name": "numpy", "version": "2"}], "expected 1, found 2"),
+                ([{"name": "numpy", "version": "1"}, {"name": "NumPy", "version": "1"}], "duplicate installed package"),
+            )
+            for packages, message in cases:
+                with self.subTest(message=message):
+                    response = subprocess.CompletedProcess([], 0, json.dumps({**base, "packages": packages}), "")
+                    with mock.patch.object(pipeline.subprocess, "run", return_value=response):
+                        with self.assertRaisesRegex(pipeline.PipelineError, message):
+                            pipeline._inspect_environment(python, {"numpy": "1"}, "test")
+
+    def test_environment_probe_rejects_wrong_runtime_and_broken_pip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            python = Path(directory) / "python.exe"
+            python.write_bytes(b"python")
+            value = {"implementation": "PyPy", "version": "3.12.14", "platform": "win-amd64", "pointer_bits": 64, "executable": str(python.resolve()), "packages": [{"name": "numpy", "version": "1"}]}
+            response = subprocess.CompletedProcess([], 0, json.dumps(value), "")
+            with mock.patch.object(pipeline.subprocess, "run", return_value=response):
+                with self.assertRaisesRegex(pipeline.PipelineError, "requires CPython"):
+                    pipeline._inspect_environment(python, {"numpy": "1"}, "test")
+            value["implementation"] = "CPython"
+            probe = subprocess.CompletedProcess([], 0, json.dumps(value), "")
+            broken = subprocess.CompletedProcess([], 1, "broken dependency", "")
+            with mock.patch.object(pipeline.subprocess, "run", side_effect=[probe, broken]):
+                with self.assertRaisesRegex(pipeline.PipelineError, "pip check failed"):
+                    pipeline._inspect_environment(python, {"numpy": "1"}, "test")
+
     def test_success_uses_exact_argv_validates_metadata_and_binds_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             fx = Fixture(Path(directory))
             receipt = fx.run()
+            self.assertEqual("qairt-small-graph-pipeline-v2", receipt["schema_version"])
+            self.assertEqual("p6-environment-v1", receipt["environment"]["schema_version"])
+            self.assertEqual(fx.profile.p3_receipt_sha256, receipt["environment"]["p3"]["receipt"]["sha256"])
+            for label in ("qairt", "reference"):
+                environment = receipt["environment"][label]
+                self.assertEqual("3.12.14", environment["python"]["version"])
+                self.assertTrue(environment["installed_packages"])
+                self.assertEqual(64, len(environment["installed_packages_sha256"]))
             self.assertEqual("QNN_CPU", receipt["backend"])
+            self.assertEqual("-s", fx.calls[0][1])
             self.assertEqual("fixed_private_archive_snapshot", receipt["sdk"]["execution_source"])
             self.assertEqual(fx.profile.runtime_file_count + 1, receipt["sdk"]["closure"]["file_count"])
             self.assertTrue(receipt["sdk"]["import_origins"])
@@ -341,7 +430,7 @@ class PipelineTests(unittest.TestCase):
             receipt = json.loads(fx.p3.read_text(encoding="utf-8"))
             receipt["archive"]["sha256"] = "0" * 64
             fx.p3.write_text(json.dumps(receipt), encoding="utf-8")
-            with self.assertRaisesRegex(pipeline.PipelineError, "archive/runtime snapshot mismatch"):
+            with self.assertRaisesRegex(pipeline.PipelineError, "fixed accepted identity"):
                 fx.run()
             self.assertFalse(fx.work.exists())
 
@@ -359,6 +448,9 @@ class PipelineTests(unittest.TestCase):
                 else:
                     receipt["archive"][field] = value
                 fx.p3.write_text(json.dumps(receipt), encoding="utf-8")
+                fx.profile = replace(
+                    fx.profile, p3_receipt_sha256=hashlib.sha256(fx.p3.read_bytes()).hexdigest()
+                )
                 with self.assertRaisesRegex(pipeline.PipelineError, message):
                     fx.run()
                 self.assertFalse(fx.work.exists())
@@ -377,6 +469,15 @@ class PipelineTests(unittest.TestCase):
                     fx.run()
             self.assertTrue(fx.work.is_dir())
             self.assertFalse(fx.output.exists())
+
+    def test_environment_drift_is_rejected_before_publication(self):
+        for label in ("QAIRT", "reference"):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                fx = Fixture(Path(directory))
+                fx.environment_drift_label = label
+                with self.assertRaisesRegex(pipeline.PipelineError, "environment changed"):
+                    fx.run()
+                self.assertFalse(fx.output.exists())
 
     def test_hash_overwrite_and_whitespace_paths_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
