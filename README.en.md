@@ -40,7 +40,7 @@ $python = 'C:\Path With Spaces\Python312\python.exe'
 ## Current operational warnings
 
 - R01–R03 fixed the P5 create race, P6 publication race, and strict encoding bitwidth/symmetry parsing with deterministic regressions. Every P6 run still requires a separate work directory.
-- M0 still has check-then-replace path races and can leave partial redaction output after a failure. Do not run it in an untrusted directory or treat failed output as publishable.
+- R04 binds opened M0 evidence back to the initial profile directory, closing the check-then-replace read. Failed redaction can still leave partial output until R05; do not treat failed output as publishable.
 - Every artifact-producing command should use a new path. Recheck input and output SHA-256 values against its receipt afterward. Device, game, performance, and quality conclusions remain `not_run`.
 
 ## Upstreams and license boundaries

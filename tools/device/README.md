@@ -47,8 +47,9 @@ Schema validation is performed by `profile_tools.py`; its validation failure
 uses exit code `1`. Fixture and Windows host checks establish tool behavior only.
 They do not establish Odin 3, CDSP, FastRPC, HTP, device, or game validation.
 
-Known host-tool limitations remain open: a checked path can be replaced before
-the later open, and a failed redaction can leave a partial output. Run only in a
-trusted directory, always choose a new output path, and treat any failed output
-as diagnostic residue rather than a publishable profile. These warnings do not
-replace the required live Linux/device validation.
+Evidence validation and redaction now bind the already-open regular file back
+to the initial profile-directory identity before reading it, rejecting a path
+replacement that opens outside that directory. A failed redaction can still
+leave a partial output until R05. Always choose a new output path and treat any
+failed output as diagnostic residue rather than a publishable profile. These
+Windows host checks do not replace live Linux/device validation.

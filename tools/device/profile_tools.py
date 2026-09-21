@@ -7,8 +7,10 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import sys
 from datetime import datetime, timezone
 from importlib import metadata
@@ -106,6 +108,85 @@ def _safe_relative_path(value: str) -> bool:
     return not path.is_absolute()
 
 
+def _opened_final_path(stream: Any, selected: Path) -> Path:
+    """Return the filesystem path bound to an already-open evidence handle."""
+
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+
+        get_final_path = ctypes.WinDLL(
+            "kernel32", use_last_error=True
+        ).GetFinalPathNameByHandleW
+        get_final_path.argtypes = [
+            wintypes.HANDLE,
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+        ]
+        get_final_path.restype = wintypes.DWORD
+        handle = msvcrt.get_osfhandle(stream.fileno())
+        capacity = 32_768
+        buffer = ctypes.create_unicode_buffer(capacity)
+        length = get_final_path(handle, buffer, capacity, 0)
+        if length == 0:
+            raise OSError(
+                ctypes.get_last_error(), "GetFinalPathNameByHandleW failed"
+            )
+        if length >= capacity:
+            raise OSError("opened evidence path exceeds Windows API buffer")
+        value = buffer.value
+        if value.startswith("\\\\?\\UNC\\"):
+            value = "\\\\" + value[8:]
+        elif value.startswith("\\\\?\\"):
+            value = value[4:]
+        return Path(value)
+    if sys.platform.startswith("linux"):
+        return Path(os.readlink(f"/proc/self/fd/{stream.fileno()}"))
+    raise OSError(
+        f"safe opened-evidence path binding is unsupported on {sys.platform}"
+    )
+
+
+def _evidence_candidate(profile_directory: Path, relative: str) -> Path:
+    candidate = profile_directory.joinpath(*PurePosixPath(relative).parts)
+    resolved = candidate.resolve(strict=True)
+    if resolved != profile_directory and profile_directory not in resolved.parents:
+        raise ProfileInvalid(
+            f"resolved evidence path escapes profile directory: {relative}"
+        )
+    return resolved
+
+
+def _read_bound_evidence(
+    profile_directory: Path,
+    profile_directory_identity: tuple[int, int],
+    relative: str,
+) -> bytes:
+    selected = _evidence_candidate(profile_directory, relative)
+    with selected.open("rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if not stat.S_ISREG(opened.st_mode):
+            raise ProfileInvalid(f"evidence path is not a regular file: {relative}")
+        final_path = _opened_final_path(stream, selected)
+        inside_initial_root = False
+        for ancestor in (final_path.parent, *final_path.parent.parents):
+            ancestor_stat = ancestor.stat(follow_symlinks=False)
+            if (
+                stat.S_ISDIR(ancestor_stat.st_mode)
+                and (ancestor_stat.st_dev, ancestor_stat.st_ino)
+                == profile_directory_identity
+            ):
+                inside_initial_root = True
+                break
+        if not inside_initial_root:
+            raise ProfileInvalid(
+                f"opened evidence resolves outside the profile directory: {relative}"
+            )
+        return stream.read()
+
+
 def _iter_observations(profile: dict[str, Any]):
     for section_name in (
         "identity", "hardware", "os", "graphics", "npu", "runtime_stack"
@@ -129,6 +210,13 @@ def _iter_observations(profile: dict[str, Any]):
 def _semantic_errors(profile: dict[str, Any], profile_path: Path, *, verify_files: bool) -> list[str]:
     errors: list[str] = []
     profile_directory = profile_path.parent.resolve()
+    profile_directory_identity: tuple[int, int] | None = None
+    if verify_files:
+        profile_directory_stat = profile_directory.stat(follow_symlinks=False)
+        profile_directory_identity = (
+            profile_directory_stat.st_dev,
+            profile_directory_stat.st_ino,
+        )
     evidence_by_id: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(profile.get("evidence", [])):
         evidence_id = item.get("evidence_id")
@@ -143,25 +231,17 @@ def _semantic_errors(profile: dict[str, Any], profile_path: Path, *, verify_file
             continue
         if not verify_files:
             continue
-        evidence_path = profile_path.parent.joinpath(*PurePosixPath(relative).parts)
+        assert profile_directory_identity is not None
         try:
-            resolved_evidence_path = evidence_path.resolve(strict=True)
+            payload = _read_bound_evidence(
+                profile_directory, profile_directory_identity, relative
+            )
         except FileNotFoundError:
             errors.append(f"$.evidence[{index}].path: evidence file does not exist: {relative}")
             continue
-        except OSError as exc:
-            errors.append(f"$.evidence[{index}].path: cannot resolve evidence file {relative}: {exc}")
+        except ProfileInvalid as exc:
+            errors.append(f"$.evidence[{index}].path: {exc}")
             continue
-        if (
-            resolved_evidence_path != profile_directory
-            and profile_directory not in resolved_evidence_path.parents
-        ):
-            errors.append(
-                f"$.evidence[{index}].path: resolved evidence path escapes profile directory: {relative}"
-            )
-            continue
-        try:
-            payload = resolved_evidence_path.read_bytes()
         except OSError as exc:
             errors.append(f"$.evidence[{index}].path: cannot read evidence file {relative}: {exc}")
             continue
@@ -366,6 +446,12 @@ def _utc_now() -> str:
 def redact_profile(private_path: Path, output_path: Path) -> None:
     if output_path.exists():
         raise InputError(f"refusing to overwrite existing output: {output_path}")
+    private_directory = private_path.parent.resolve(strict=True)
+    private_directory_stat = private_directory.stat(follow_symlinks=False)
+    private_directory_identity = (
+        private_directory_stat.st_dev,
+        private_directory_stat.st_ino,
+    )
     private = _load_json(private_path, label="private profile")
     validate_profile(private, private_path)
     if private.get("profile_kind") != "private":
@@ -389,7 +475,9 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
     public_id_by_private_id: dict[str, str] = {}
     for index, item in enumerate(private["evidence"], start=1):
         source_path = private_path.parent.joinpath(*PurePosixPath(item["path"]).parts)
-        payload = source_path.read_bytes()
+        payload = _read_bound_evidence(
+            private_directory, private_directory_identity, item["path"]
+        )
         if source_path.suffix.lower() not in {".txt", ".log", ".json", ".stdout", ".stderr"}:
             continue
         redacted_payload = _redact_evidence_payload(source_path, payload, tokens, path_patterns)

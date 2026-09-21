@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -156,6 +157,127 @@ class ProfileToolsTests(unittest.TestCase):
                 profile_tools.validate_profile(profile, profile_path)
         self.assertIn("$.evidence[0].path", str(caught.exception))
         self.assertIn("escapes profile directory", str(caught.exception))
+
+    def test_opened_evidence_remains_bound_to_initial_profile_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            profile_dir = base / "profile"
+            evidence_dir = profile_dir / "evidence"
+            evidence_dir.mkdir(parents=True)
+            outside = base / "outside"
+            (outside / "evidence").mkdir(parents=True)
+            relative = "evidence/value.txt"
+            inside_payload = b"inside"
+            outside_payload = b"outside-secret"
+            (evidence_dir / "value.txt").write_bytes(inside_payload)
+            (outside / "evidence" / "value.txt").write_bytes(outside_payload)
+            profile_path = profile_dir / "device-profile.json"
+            profile = copy.deepcopy(self.profile)
+            profile["evidence"] = [copy.deepcopy(profile["evidence"][0])]
+            profile["evidence"][0].update(
+                path=relative,
+                sha256=hashlib.sha256(outside_payload).hexdigest(),
+                byte_count=len(outside_payload),
+            )
+            for _, observation in profile_tools._iter_observations(profile):
+                observation["source"]["evidence_ids"] = [
+                    evidence_id
+                    for evidence_id in observation["source"]["evidence_ids"]
+                    if evidence_id == profile["evidence"][0]["evidence_id"]
+                ]
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+            real_candidate = profile_tools._evidence_candidate
+
+            def candidate_then_replace(root, selected_relative):
+                real_candidate(root, selected_relative)
+                return outside.joinpath(*PurePosixPath(selected_relative).parts)
+
+            with mock.patch.object(
+                profile_tools,
+                "_evidence_candidate",
+                side_effect=candidate_then_replace,
+            ):
+                with self.assertRaises(profile_tools.ProfileInvalid) as caught:
+                    profile_tools.validate_profile(profile, profile_path)
+
+            self.assertIn("opened evidence resolves outside", str(caught.exception))
+
+    def test_opened_evidence_allows_link_to_file_inside_initial_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile_dir = root / "profile"
+            actual = profile_dir / "actual"
+            nested = profile_dir / "nested"
+            actual.mkdir(parents=True)
+            nested.mkdir()
+            payload = b"inside-via-link"
+            (actual / "value.txt").write_bytes(payload)
+            link = nested / "evidence-link"
+            if os.name == "nt":
+                created = subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(link), str(actual)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                if created.returncode != 0:
+                    self.skipTest(
+                        f"junction creation unavailable: {created.stderr or created.stdout}"
+                    )
+            else:
+                try:
+                    link.symlink_to(actual, target_is_directory=True)
+                except OSError as exc:
+                    self.skipTest(f"symlink creation unavailable: {exc}")
+            relative = "nested/evidence-link/value.txt"
+            profile_path = profile_dir / "device-profile.json"
+            profile = copy.deepcopy(self.profile)
+            profile["evidence"] = [copy.deepcopy(profile["evidence"][0])]
+            profile["evidence"][0].update(
+                path=relative,
+                sha256=hashlib.sha256(payload).hexdigest(),
+                byte_count=len(payload),
+            )
+            for _, observation in profile_tools._iter_observations(profile):
+                observation["source"]["evidence_ids"] = [
+                    evidence_id
+                    for evidence_id in observation["source"]["evidence_ids"]
+                    if evidence_id == profile["evidence"][0]["evidence_id"]
+                ]
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+            profile_tools.validate_profile(profile, profile_path)
+
+    def test_redaction_rechecks_opened_evidence_after_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            outside = root / "outside.txt"
+            outside.write_text("outside secret", encoding="utf-8")
+            output = root / "public" / "public.json"
+            real_candidate = profile_tools._evidence_candidate
+            call_count = 0
+
+            def replace_after_validation(profile_directory, relative):
+                nonlocal call_count
+                selected = real_candidate(profile_directory, relative)
+                call_count += 1
+                if call_count > 2:
+                    return outside
+                return selected
+
+            with mock.patch.object(
+                profile_tools,
+                "_evidence_candidate",
+                side_effect=replace_after_validation,
+            ):
+                with self.assertRaisesRegex(
+                    profile_tools.ProfileInvalid,
+                    "opened evidence resolves outside",
+                ):
+                    profile_tools.redact_profile(private_path, output)
+
+            self.assertFalse(output.exists())
 
     def _redaction_input(self, root: Path) -> Path:
         source = root / "private"
