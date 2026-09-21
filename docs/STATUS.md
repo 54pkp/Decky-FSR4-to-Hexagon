@@ -21,11 +21,11 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 活动任务与状态规则
 
-下一批：**R06a——固化QAIRT/P6前端环境的可校验重建配方。**
+下一批：**R06b——将P6执行绑定到固定SDK快照或等价文件闭包。**
 
 | 队列 | 当前实现状态 | 选择条件 |
 | --- | --- | --- |
-| R：审计修复、可复现性与回归 | R01–R05 `complete`；其余叶子项 `not_started` | 当前优先；R06a起，独立项可按依赖选择 |
+| R：审计修复、可复现性与回归 | R01–R06a `complete`；其余叶子项 `not_started` | 当前优先；R06b起，独立项可按依赖选择 |
 | F：真实FSR CPU/ONNX/QAIRT离线 | 所有叶子项 `not_started` | 满足所选批次R修复及资产/参考依赖后选取 |
 | E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
 | D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
@@ -39,6 +39,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 | R03 | `complete` | [P6 encoding严格解析](validation/host/2026-09-22-r03-p6-strict-encoding.md)；仅为Windows host_test |
 | R04 | `complete` | [M0 evidence打开对象绑定](validation/host/2026-09-22-r04-m0-evidence-open-binding.md)；仅为Windows host_test |
 | R05 | `complete` | [M0公开脱敏整体事务](validation/host/2026-09-22-r05-m0-redaction-transaction.md)；仅为Windows host_test |
+| R06a | `complete` | [QAIRT/P6前端环境重建](validation/host/2026-09-22-r06a-qairt-frontend-environment.md)；fresh Windows venv / CPU测试，不是SDK执行或设备验证 |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -65,7 +66,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
 
-最近记录：[R05 M0公开脱敏整体事务](validation/host/2026-09-22-r05-m0-redaction-transaction.md)；前一批：[R04 M0 evidence打开对象绑定](validation/host/2026-09-22-r04-m0-evidence-open-binding.md)。
+最近记录：[R06a QAIRT/P6前端环境重建](validation/host/2026-09-22-r06a-qairt-frontend-environment.md)；前一批：[R05 M0公开脱敏整体事务](validation/host/2026-09-22-r05-m0-redaction-transaction.md)。
 
 ## 最终里程碑
 

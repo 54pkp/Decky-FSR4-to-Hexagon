@@ -47,6 +47,33 @@ integration. CPU and HTP files are only offline-inspected candidates. The
 inspector's 16-MiB safety limit; bounded `QnnHtpNetRunExtensions.dll` supplies
 the fourth x86-64 PE candidate.
 
+## Rebuild the P6 Python frontend
+
+The checked-in [`requirements-frontend.txt`](requirements-frontend.txt) fixes
+the 33 distributions required by the QAIRT 2.49 profile plus
+`onnx==1.18.0` and `protobuf==7.36.2`. Use the dedicated entry point with an
+explicit CPython 3.12.14 AMD64 interpreter and a new target directory:
+
+```powershell
+$python = 'C:\Path With Spaces\Python312\python.exe'
+& $python tools/qairt/environment.py check --python $python
+& $python tools/qairt/environment.py init --python $python `
+  --venv local/venvs/qairt-2.49.0.260730
+& .\local\venvs\qairt-2.49.0.260730\Scripts\python.exe -m pip --isolated check
+```
+
+`init` refuses every existing target, creates a Windows venv, installs with
+isolated pip configuration, runs `pip check`, and reads the installed package
+list back to verify all 35 direct pins. A failure after creation leaves the
+partial environment for diagnosis; remove it manually or select another new
+path after recording the failure. The system Python, existing environments,
+SDK, archive, and artifacts are not modified.
+
+This is a reproducible direct-dependency recipe, not a hash-locked wheelhouse
+or a frozen transitive/native dependency closure. It does not download or
+verify the ignored QAIRT SDK. R06b/R06c separately cover execution binding and
+environment receipts.
+
 ## P6 small-graph W8A8 pipeline
 
 `small_graph_pipeline.py` consumes only explicit SDK, interpreter, model,

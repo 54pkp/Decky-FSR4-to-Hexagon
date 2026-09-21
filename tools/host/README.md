@@ -53,7 +53,7 @@ must provision the relevant dependencies before using its command.
 | `.venv` | Python 3.12.14; baseline schema, host, model, replay, and file-handling tests; jsonschema 4.26.0 | [`requirements-host.txt`](../device/requirements-host.txt) |
 | `local/venvs/reference` | Python 3.12.14; P5 ONNX/ORT CPU reference; NumPy 2.2.6, ONNX 1.18.0, ONNX Runtime 1.22.0 | [`requirements-reference.txt`](../reference/requirements-reference.txt) and the [P5 guide](../reference/README.md) |
 | `local/venvs/fsr-extract` | Python 3.12.14; P7 extraction and P8 pass0 checks; NumPy 2.2.6, jsonschema 4.26.0 | [P7/P8 guide](../fsr/README.md); no checked-in full rebuild lock yet |
-| `local/venvs/qairt-2.49.0.260730` | Python 3.12.14; P3 probe, P4 ABI tests, and P6 small graph; NumPy 1.26.4, ONNX 1.18.0, protobuf 7.36.2 | [QAIRT guide](../qairt/README.md); the P3 probe pins its required distribution profile, but a complete P6 rebuild lock remains R work |
+| `local/venvs/qairt-2.49.0.260730` | Python 3.12.14 AMD64; P3 probe, P4 ABI tests, and P6 small graph; 33 QAIRT pins plus ONNX 1.18.0 and protobuf 7.36.2 | [`requirements-frontend.txt`](../qairt/requirements-frontend.txt), [`environment.py`](../qairt/environment.py), and the [QAIRT guide](../qairt/README.md); transitive/native closure and execution receipt binding remain separate R work |
 
 Run the environments explicitly from the repository root:
 
