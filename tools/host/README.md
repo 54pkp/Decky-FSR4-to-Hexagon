@@ -37,10 +37,11 @@ After a successful initialisation, run the host suite with:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-At the 2026-09-22 audit baseline this command reported 233 tests: 199 passed and
-34 skipped. Dedicated environments subsequently ran 33 of those skipped tests;
-one Windows symlink behavior was checked manually. Consult `docs/STATUS.md` for
-the current result rather than treating skipped tests as passed.
+The suite has grown since the original 2026-09-22 audit. The formerly
+unconditional Windows file-symlink skip now performs an in-place capability
+probe: capable hosts execute the safety assertion, while incapable hosts emit
+the actual exception type, errno, winerror, and text. Consult `docs/STATUS.md`
+for the current counts rather than treating skipped tests as passed.
 
 ## Existing test environments
 

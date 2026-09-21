@@ -37,6 +37,21 @@ def directory_link(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
+def file_symlink_capability(link: Path, target: Path, creator=None) -> tuple[bool, str]:
+    create = creator or (
+        lambda: os.symlink(target, link, target_is_directory=False)
+    )
+    try:
+        create()
+    except OSError as exc:
+        return False, (
+            f"{type(exc).__name__} errno={exc.errno!r} "
+            f"winerror={getattr(exc, 'winerror', None)!r} "
+            f"strerror={exc.strerror!r} message={exc}"
+        )
+    return True, "created and verified by the test"
+
+
 class CollectorSafetyTests(unittest.TestCase):
     def test_fixture_root_link_cannot_escape_case(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -66,8 +81,6 @@ class CollectorSafetyTests(unittest.TestCase):
         self.assertLess(elapsed, 4.0)
 
     def test_commands_file_link_cannot_escape_case(self):
-        if os.name == "nt":
-            self.skipTest("ordinary file symlink requires an unavailable Windows privilege")
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             case = base / "case"
@@ -75,9 +88,38 @@ class CollectorSafetyTests(unittest.TestCase):
             (case / "root").mkdir()
             outside = base / "commands.json"
             outside.write_text(json.dumps([]), encoding="utf-8")
-            (case / "commands.json").symlink_to(outside)
+            available, detail = file_symlink_capability(case / "commands.json", outside)
+            if not available:
+                self.skipTest(f"file symlink capability probe failed: {detail}")
+            self.assertTrue((case / "commands.json").is_symlink())
             with self.assertRaises(device_collect.InputError):
                 device_collect.Collector(base / "output", case, [])
+
+    def test_file_symlink_capability_reports_success_branch(self):
+        called = []
+        available, detail = file_symlink_capability(
+            Path("link"), Path("target"), creator=lambda: called.append(True)
+        )
+        self.assertTrue(available)
+        self.assertEqual("created and verified by the test", detail)
+        self.assertEqual([True], called)
+
+    def test_file_symlink_capability_reports_reproducible_failure_branch(self):
+        error = OSError(13, "privilege not held")
+        error.winerror = 1314
+
+        def fail():
+            raise error
+
+        available, detail = file_symlink_capability(
+            Path("link"), Path("target"), creator=fail
+        )
+        self.assertFalse(available)
+        self.assertIn("errno=13", detail)
+        self.assertIn("winerror=1314", detail)
+        self.assertIn("PermissionError", detail)
+        self.assertIn("strerror='privilege not held'", detail)
+        self.assertIn("privilege not held", detail)
 
     def test_missing_fixture_contract_paths_are_input_errors(self):
         with tempfile.TemporaryDirectory() as directory:
