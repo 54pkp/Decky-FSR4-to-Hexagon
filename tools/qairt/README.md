@@ -115,6 +115,10 @@ install the QAIRT or reference dependencies, so both explicit interpreters must
 already be provisioned. After success, verify `success_receipt.json` and its
 bound file hashes before retaining the result.
 
+If either selected root's direct parent is missing, the pipeline does not
+create it: the CLI exits 1 with a single `work root parent does not exist` or
+`output root parent does not exist` diagnostic and no Python traceback.
+
 Each publisher now uses a private, randomly named staging directory beside the
 target. If another publisher wins the final rename, the loser removes only its
 own staging directory and preserves the winner's output and receipt. Encoding

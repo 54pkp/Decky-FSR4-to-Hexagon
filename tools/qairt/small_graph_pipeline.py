@@ -144,16 +144,27 @@ def _regular(path: Path, label: str) -> None:
             raise PipelineError(f"{label} must not traverse a reparse/non-directory ancestor: {item}")
 
 
-def _safe_new_root(path: Path, label: str) -> Path:
+def _safe_new_root(path: Path, label: str) -> tuple[Path, tuple[int, int]]:
     selected = Path(os.path.abspath(os.fspath(path)))
-    if selected.exists():
+    if os.path.lexists(selected):
         raise PipelineError(f"{label} already exists: {selected}")
     parent = selected.parent
+    parent_identity: tuple[int, int] | None = None
     for item in (parent, *parent.parents):
-        value = os.stat(item, follow_symlinks=False)
+        try:
+            value = os.stat(item, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            if item == parent:
+                raise PipelineError(f"{label} parent does not exist: {parent}") from exc
+            raise PipelineError(f"cannot inspect {label} ancestor {item}: {exc}") from exc
+        except OSError as exc:
+            raise PipelineError(f"cannot inspect {label} ancestor {item}: {exc}") from exc
         if _is_reparse(value) or not stat.S_ISDIR(value.st_mode):
             raise PipelineError(f"{label} must not traverse a reparse/non-directory ancestor: {item}")
-    return selected
+        if item == parent:
+            parent_identity = (value.st_dev, value.st_ino)
+    assert parent_identity is not None
+    return selected, parent_identity
 
 
 def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, object]:
@@ -702,10 +713,8 @@ def run_pipeline(
     reference_python = Path(os.path.abspath(os.fspath(reference_python)))
     model = Path(os.path.abspath(os.fspath(model)))
     p3_receipt = Path(os.path.abspath(os.fspath(p3_receipt)))
-    work = _safe_new_root(work_root, "work root")
-    output = _safe_new_root(output_root, "output root")
-    output_parent_stat = os.stat(output.parent, follow_symlinks=False)
-    output_parent_identity = (output_parent_stat.st_dev, output_parent_stat.st_ino)
+    work, _ = _safe_new_root(work_root, "work root")
+    output, output_parent_identity = _safe_new_root(output_root, "output root")
     if any(character.isspace() for character in str(work)):
         raise PipelineError("work root path must contain no whitespace")
     for path, label in (

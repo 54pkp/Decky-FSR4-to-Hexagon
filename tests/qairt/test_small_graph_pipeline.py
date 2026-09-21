@@ -194,6 +194,45 @@ class Fixture:
     "requires the pinned QAIRT pipeline environment",
 )
 class PipelineTests(unittest.TestCase):
+    def test_missing_work_or_output_parent_has_stable_pipeline_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for label, target in (
+                ("work root", root / "missing-work-parent" / "work"),
+                ("output root", root / "missing-output-parent" / "output"),
+            ):
+                with self.subTest(label=label):
+                    work = target if label == "work root" else root / "work"
+                    output = target if label == "output root" else root / "output"
+                    with self.assertRaisesRegex(
+                        pipeline.PipelineError,
+                        rf"{label} parent does not exist",
+                    ):
+                        pipeline.run_pipeline(
+                            root / "archive.zip", root / "qairt.exe", root / "reference.exe",
+                            root / "model.onnx", work, output, root / "p3.json",
+                        )
+                    self.assertFalse(work.exists())
+                    self.assertFalse(output.exists())
+
+    def test_cli_missing_output_parent_returns_one_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = subprocess.run(
+                [sys.executable, str(Path(pipeline.__file__)),
+                 "--archive", str(root / "archive.zip"),
+                 "--qairt-python", str(root / "qairt.exe"),
+                 "--reference-python", str(root / "reference.exe"),
+                 "--model", str(root / "model.onnx"),
+                 "--work-root", str(root / "work"),
+                 "--output-root", str(root / "missing-parent" / "output"),
+                 "--p3-receipt", str(root / "p3.json")],
+                text=True, capture_output=True, check=False,
+            )
+        self.assertEqual(1, result.returncode)
+        self.assertIn("output root parent does not exist", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_stage_environments_remove_inherited_python_routing(self):
         polluted = {
             "PATH": "outside-path",
