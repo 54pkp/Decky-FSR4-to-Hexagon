@@ -39,7 +39,7 @@ $python = 'C:\Path With Spaces\Python312\python.exe'
 
 ## Current operational warnings
 
-- R01 and R02 fixed the P5 create race and P6 publication race with deterministic regressions. Malformed P6 encoding parsing remains open for R03, and every run still requires a separate work directory.
+- R01–R03 fixed the P5 create race, P6 publication race, and strict encoding bitwidth/symmetry parsing with deterministic regressions. Every P6 run still requires a separate work directory.
 - M0 still has check-then-replace path races and can leave partial redaction output after a failure. Do not run it in an untrusted directory or treat failed output as publishable.
 - Every artifact-producing command should use a new path. Recheck input and output SHA-256 values against its receipt afterward. Device, game, performance, and quality conclusions remain `not_run`.
 

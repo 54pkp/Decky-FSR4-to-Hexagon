@@ -246,7 +246,9 @@ def _encoding(
         raise PipelineError(f"encoding JSON must contain exactly one per-tensor encoding for {name}")
     item = candidates[0]
     bitwidth = _first_field(item, "bitwidth", "bw", "bits")
-    if int(bitwidth) != bits:
+    if isinstance(bitwidth, bool) or not isinstance(bitwidth, int):
+        raise PipelineError(f"{name} bitwidth must be an integer")
+    if bitwidth != bits:
         raise PipelineError(f"{name} bitwidth must be {bits}")
     dtype_text = str(_first_field(item, "dtype", "data_type", "type") or "").lower()
     signed_value = _first_field(item, "is_signed", "signed")
@@ -258,9 +260,13 @@ def _encoding(
     if observed_signed is not None and observed_signed != signed:
         raise PipelineError(f"{name} signedness mismatch")
     symmetric_value = _first_field(item, "is_symmetric", "symmetric")
-    if isinstance(symmetric_value, str):
-        symmetric_value = symmetric_value.strip().lower() == "true"
-    if bool(symmetric_value) != symmetric:
+    if isinstance(symmetric_value, bool):
+        observed_symmetric = symmetric_value
+    elif isinstance(symmetric_value, str) and symmetric_value in {"false", "true"}:
+        observed_symmetric = symmetric_value == "true"
+    else:
+        raise PipelineError(f"{name} symmetry must be boolean true or false")
+    if observed_symmetric != symmetric:
         raise PipelineError(f"{name} symmetry mismatch")
     axis = _first_field(item, "axis", "channel_axis", "quantized_dimension")
     if axis not in (None, "", -1, "-1"):

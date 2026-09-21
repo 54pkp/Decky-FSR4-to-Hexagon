@@ -81,10 +81,11 @@ bound file hashes before retaining the result.
 
 Each publisher now uses a private, randomly named staging directory beside the
 target. If another publisher wins the final rename, the loser removes only its
-own staging directory and preserves the winner's output and receipt. Metadata
-validation still accepts some malformed bitwidth and boolean representations;
-until R03 closes that issue, do not treat acceptance of hand-edited encoding
-JSON as trustworthy evidence. Unique work roots remain mandatory.
+own staging directory and preserves the winner's output and receipt. Encoding
+bitwidth is accepted only as a JSON integer (not boolean/float/string);
+symmetry accepts a JSON boolean or the fixed SDK's exact lowercase `"true"` /
+`"false"` strings. Other representations are rejected. Unique work roots
+remain mandatory.
 
 The P6 success receipt hashes the selected interpreter executables, scripts,
 inputs, logs, and outputs, but it does not bind the complete installed Python

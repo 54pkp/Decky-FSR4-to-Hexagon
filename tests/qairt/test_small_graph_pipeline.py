@@ -52,6 +52,7 @@ class Fixture:
         self.output = root / "output"
         self.calls: list[list[str]] = []
         self.encoding_changes: dict[str, object] = {}
+        self.encoding_target = "conv_weight"
         self.csv_encoding_changes: dict[str, object] = {}
         self.csv_shape = "1,1,4,4"
         self.cpu_delta = 0.0
@@ -82,7 +83,7 @@ class Fixture:
         elif stage == "quantizer":
             Path(args[args.index("--output_dlc") + 1]).write_bytes(b"quant-dlc")
             def entry(bits, dtype, symmetric, offset=-1):
-                return {"bitwidth": bits, "dtype": dtype, "is_symmetric": symmetric, "scale": 0.01, "offset": offset, "zero_point": -offset}
+                return {"bitwidth": bits, "dtype": dtype, "is_symmetric": str(symmetric).lower(), "scale": 0.01, "offset": offset, "zero_point": -offset}
             values = {
                 "reference_input": entry(8, "uFxp_8", False),
                 "reference_output": entry(8, "uFxp_8", False),
@@ -92,9 +93,9 @@ class Fixture:
             }
             for key, change in self.encoding_changes.items():
                 if key == "axis":
-                    values["conv_weight"]["axis"] = change
+                    values[self.encoding_target]["axis"] = change
                 else:
-                    values["conv_weight"][key] = change
+                    values[self.encoding_target][key] = change
             (cwd / "small_graph.encoding.json").write_text(json.dumps({"encodings": values}), encoding="utf-8")
         elif stage == "dlc_info":
             save = Path(args[args.index("--save") + 1])
@@ -189,6 +190,49 @@ class PipelineTests(unittest.TestCase):
                 fx.encoding_changes = json_changes
                 fx.csv_encoding_changes = csv_changes
                 with self.assertRaisesRegex(pipeline.PipelineError, message):
+                    fx.run()
+                self.assertFalse(fx.output.exists())
+
+    def test_encoding_requires_integer_bitwidth_and_explicit_boolean_symmetry(self):
+        cases = (
+            ({"bitwidth": 8.5}, "bitwidth must be an integer"),
+            ({"bitwidth": 8.0}, "bitwidth must be an integer"),
+            ({"bitwidth": "8"}, "bitwidth must be an integer"),
+            ({"bitwidth": True}, "bitwidth must be an integer"),
+            ({"bitwidth": None}, "bitwidth must be an integer"),
+            ({"is_symmetric": "not-a-boolean"}, "symmetry must be boolean"),
+            ({"is_symmetric": "FALSE"}, "symmetry must be boolean"),
+            ({"is_symmetric": " false "}, "symmetry must be boolean"),
+            ({"is_symmetric": 0}, "symmetry must be boolean"),
+            ({"is_symmetric": None}, "symmetry must be boolean"),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
+                fx = Fixture(Path(directory))
+                fx.encoding_changes = changes
+                with self.assertRaisesRegex(pipeline.PipelineError, message):
+                    fx.run()
+                self.assertFalse(fx.output.exists())
+
+        with tempfile.TemporaryDirectory() as directory:
+            fx = Fixture(Path(directory))
+            fx.encoding_changes = {"is_symmetric": False}
+            fx.run()
+            self.assertTrue((fx.output / "success_receipt.json").is_file())
+
+        with tempfile.TemporaryDirectory() as directory:
+            fx = Fixture(Path(directory))
+            fx.encoding_target = "conv_bias"
+            fx.encoding_changes = {"is_symmetric": True}
+            fx.run()
+            self.assertTrue((fx.output / "success_receipt.json").is_file())
+
+        for value in (1, "yes"):
+            with self.subTest(conv_bias_symmetry=value), tempfile.TemporaryDirectory() as directory:
+                fx = Fixture(Path(directory))
+                fx.encoding_target = "conv_bias"
+                fx.encoding_changes = {"is_symmetric": value}
+                with self.assertRaisesRegex(pipeline.PipelineError, "symmetry must be boolean"):
                     fx.run()
                 self.assertFalse(fx.output.exists())
 
