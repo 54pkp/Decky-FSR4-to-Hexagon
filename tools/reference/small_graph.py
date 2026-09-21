@@ -11,13 +11,15 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import stat
 import sys
 
 import numpy as np
 import onnx
 from onnx import TensorProto, helper, numpy_helper
-import onnxruntime as ort
 from google.protobuf.message import DecodeError
 
 
@@ -31,6 +33,7 @@ IR_VERSION = 10
 ABSOLUTE_TOLERANCE = 1e-6
 RELATIVE_TOLERANCE = 0.0
 RANDOM_SEED = 20260921
+EXPORT_SCHEMA_VERSION = "small-graph-calibration-export-v1"
 
 # These coefficients are part of the public synthetic graph contract.  The
 # NumPy reference below implements convolution directly rather than invoking
@@ -115,6 +118,83 @@ def write_model(path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _non_reparse_directory_chain(path: Path, label: str) -> None:
+    selected = Path(os.path.abspath(os.fspath(path)))
+    existing = selected if selected.exists() else selected.parent
+    for item in (existing, *existing.parents):
+        value = os.stat(item, follow_symlinks=False)
+        if stat.S_ISLNK(value.st_mode) or bool(
+            getattr(value, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        ):
+            raise ReferenceError(f"{label} must not traverse a reparse point: {item}")
+        if not stat.S_ISDIR(value.st_mode):
+            raise ReferenceError(f"{label} ancestor is not a directory: {item}")
+
+
+def export_calibration(model_path: Path, output_directory: Path) -> dict[str, object]:
+    """Export fixed P5 inputs and independent expected values as raw LE float32."""
+
+    model_path = Path(os.path.abspath(os.fspath(model_path)))
+    output_directory = Path(os.path.abspath(os.fspath(output_directory)))
+    if any(character.isspace() for character in str(output_directory)):
+        raise ReferenceError("export directory path must contain no whitespace")
+    if output_directory.exists():
+        raise ReferenceError(f"export directory already exists: {output_directory}")
+    _non_reparse_directory_chain(model_path.parent, "model path")
+    _non_reparse_directory_chain(output_directory, "export directory")
+    model = load_and_validate_model(model_path)
+    del model
+    if model_path.read_bytes() != model_bytes():
+        raise ReferenceError("model bytes do not equal the fixed P5 model")
+
+    try:
+        output_directory.mkdir(parents=False)
+        cases: list[dict[str, object]] = []
+        input_lines: list[str] = []
+        for order, (case_name, value) in enumerate(fixed_inputs().items()):
+            input_path = output_directory / f"{case_name}.input.raw"
+            expected_path = output_directory / f"{case_name}.expected.raw"
+            # astype is intentional: it makes endianness explicit on every host.
+            input_path.write_bytes(np.ascontiguousarray(value).astype("<f4", copy=False).tobytes(order="C"))
+            expected = numpy_expected(value)
+            expected_path.write_bytes(np.ascontiguousarray(expected).astype("<f4", copy=False).tobytes(order="C"))
+            input_lines.append(f"{INPUT_NAME}:={input_path}\n")
+            cases.append(
+                {
+                    "order": order,
+                    "name": case_name,
+                    "input": {"file": input_path.name, "bytes": input_path.stat().st_size, "sha256": _sha256(input_path)},
+                    "expected": {"file": expected_path.name, "bytes": expected_path.stat().st_size, "sha256": _sha256(expected_path)},
+                }
+            )
+        input_list = output_directory / "input_list.txt"
+        input_list.write_bytes("".join(input_lines).encode("utf-8"))
+        manifest: dict[str, object] = {
+            "schema_version": EXPORT_SCHEMA_VERSION,
+            "model": {"path": str(model_path), "bytes": model_path.stat().st_size, "sha256": _sha256(model_path)},
+            "input": {"name": INPUT_NAME, "shape": list(INPUT_SHAPE), "dtype": "float32", "byte_order": "little", "layout": "NCHW", "storage_order": "C"},
+            "output": {"name": OUTPUT_NAME, "shape": list(OUTPUT_SHAPE), "dtype": "float32", "byte_order": "little", "layout": "NCHW", "storage_order": "C"},
+            "case_order": [case["name"] for case in cases],
+            "cases": cases,
+            "input_list": {"file": input_list.name, "bytes": input_list.stat().st_size, "sha256": _sha256(input_list), "syntax": f"{INPUT_NAME}:=<absolute-raw-path>"},
+        }
+        manifest_path = output_directory / "manifest.json"
+        manifest_path.write_bytes((json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+        return manifest
+    except Exception:
+        shutil.rmtree(output_directory, ignore_errors=True)
+        raise
 
 
 def _tensor_contract(value_info: onnx.ValueInfoProto) -> tuple[str, int, tuple[int, ...]]:
@@ -260,6 +340,10 @@ def run_cpu(value: np.ndarray, path: Path = FIXTURE_PATH) -> ExecutionResult:
     validate_input(value)
     load_and_validate_model(path)
     try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise ReferenceError(f"could not import ONNX Runtime: {exc}") from exc
+    try:
         session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     except Exception as exc:  # ONNX Runtime exposes several provider/session errors.
         raise ReferenceError(f"could not create CPU inference session: {exc}") from exc
@@ -285,6 +369,10 @@ def run_cpu(value: np.ndarray, path: Path = FIXTURE_PATH) -> ExecutionResult:
 
 
 def verify(path: Path = FIXTURE_PATH) -> dict[str, object]:
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise ReferenceError(f"could not import ONNX Runtime: {exc}") from exc
     model = load_and_validate_model(path)
     del model
     cases: dict[str, dict[str, float]] = {}
@@ -326,13 +414,18 @@ def main(argv: list[str] | None = None) -> int:
     build_parser.add_argument("--output", type=Path, default=FIXTURE_PATH)
     verify_parser = subparsers.add_parser("verify", help="check and execute the fixture on CPU")
     verify_parser.add_argument("--model", type=Path, default=FIXTURE_PATH)
+    export_parser = subparsers.add_parser("export", help="export fixed raw calibration and expected data")
+    export_parser.add_argument("--model", type=Path, default=FIXTURE_PATH)
+    export_parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "build":
             digest = write_model(arguments.output)
             print(json.dumps({"model": str(arguments.output), "sha256": digest}, sort_keys=True))
-        else:
+        elif arguments.command == "verify":
             print(json.dumps(verify(arguments.model), indent=2, sort_keys=True))
+        else:
+            print(json.dumps(export_calibration(arguments.model, arguments.output), indent=2, sort_keys=True))
     except ReferenceError as exc:
         print(f"reference verification failed: {exc}", file=sys.stderr)
         return 1

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -163,6 +164,41 @@ class SmallGraphTests(unittest.TestCase):
         self.assertIn(EXPECTED_MODEL_SHA256, result.stdout)
         self.assertIn('"seeded_nonzero"', result.stdout)
         self.assertIn("not FSR4, HTP, device, or game validation", result.stdout)
+
+    def test_export_writes_ordered_little_endian_raw_and_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "export"
+            manifest = small_graph.export_calibration(small_graph.FIXTURE_PATH, output)
+            self.assertEqual(["zero", "pattern", "seeded_nonzero"], manifest["case_order"])
+            self.assertEqual("little", manifest["input"]["byte_order"])
+            self.assertEqual("NCHW", manifest["input"]["layout"])
+            lines = (output / "input_list.txt").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(3, len(lines))
+            for line, case in zip(lines, manifest["cases"], strict=True):
+                self.assertEqual(f"reference_input:={output / case['input']['file']}", line)
+                actual = np.fromfile(output / case["input"]["file"], dtype="<f4").reshape(small_graph.INPUT_SHAPE)
+                expected = np.fromfile(output / case["expected"]["file"], dtype="<f4").reshape(small_graph.OUTPUT_SHAPE)
+                np.testing.assert_array_equal(actual, small_graph.fixed_inputs()[case["name"]])
+                np.testing.assert_array_equal(expected, small_graph.numpy_expected(actual))
+                self.assertEqual(64, case["input"]["bytes"])
+                self.assertEqual(hashlib.sha256((output / case["input"]["file"]).read_bytes()).hexdigest(), case["input"]["sha256"])
+            self.assertEqual(manifest, json.loads((output / "manifest.json").read_text(encoding="utf-8")))
+
+    def test_export_rejects_existing_whitespace_and_wrong_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "existing"
+            existing.mkdir()
+            with self.assertRaisesRegex(small_graph.ReferenceError, "already exists"):
+                small_graph.export_calibration(small_graph.FIXTURE_PATH, existing)
+            with self.assertRaisesRegex(small_graph.ReferenceError, "whitespace"):
+                small_graph.export_calibration(small_graph.FIXTURE_PATH, root / "has space")
+            wrong = root / "wrong.onnx"
+            model = small_graph.build_model()
+            model.producer_version = "wrong"
+            wrong.write_bytes(model.SerializeToString())
+            with self.assertRaisesRegex(small_graph.ReferenceError, "fixed P5 model"):
+                small_graph.export_calibration(wrong, root / "wrong-export")
 
 
 if __name__ == "__main__":

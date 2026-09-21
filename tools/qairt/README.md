@@ -44,3 +44,29 @@ integration. CPU and HTP files are only offline-inspected candidates. The
 95-MiB `QnnHtp.dll` is presence/hash checked but is not parsed past the ABI
 inspector's 16-MiB safety limit; bounded `QnnHtpNetRunExtensions.dll` supplies
 the fourth x86-64 PE candidate.
+
+## P5 small-graph W8A8 pipeline
+
+`small_graph_pipeline.py` consumes only explicit SDK, interpreter, model,
+work, output, and P3-receipt paths. The work and output roots must not already
+exist; the work path must contain no whitespace because its absolute raw paths
+are written into the QAIRT calibration list. For example:
+
+```powershell
+& .\local\venvs\qairt-2.49.0.260730\Scripts\python.exe tools/qairt/small_graph_pipeline.py `
+  --sdk-root sdks/qairt/2.49.0.260730 `
+  --qairt-python local/venvs/qairt-2.49.0.260730/Scripts/python.exe `
+  --reference-python local/venvs/reference/Scripts/python.exe `
+  --model tools/reference/fixtures/conv_add_relu.onnx `
+  --work-root artifacts/P6-work `
+  --output-root artifacts/P6 `
+  --p3-receipt artifacts/P3/qairt-2.49.0.260730-final-host-probe.json
+```
+
+It fixes conversion and W8A8/B32 quantization to target `HTP`, validates the
+generated encoding JSON and DLC-info CSV, and then executes the DLC using the
+Windows `QnnCpu.dll` plus `QnnModelDlc.dll`. A success receipt is published
+only after all three CPU outputs pass the predeclared `atol=0.01, rtol=0`
+comparison. Failures preserve the work directory and logs but do not publish a
+success output. HTP execution, device, FSR, and game validation remain
+`not_run`.
