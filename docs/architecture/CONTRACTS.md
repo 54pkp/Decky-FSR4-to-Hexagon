@@ -109,6 +109,8 @@ error/disconnect → quarantine_or_cleanup → destroy_context → closed
 - 记录处理完成与游戏实际写回两个事件。history/recurrent 优先采用 current/next 双缓冲：完成全部必要处理并确认消费后交换；若沿用 in-place 更新，任何部分更新失败或消费不确定均使整套历史失效，等待在途工作结束后重新初始化。仅跳过一个 commit 标记不能撤销 GPU 已写入的数据。
 - GPU readback 完成前 CPU 不能读；NPU 完成前 GPU 后处理不能读；游戏继续使用输出前写回必须可见。D3D12 未提交命令的 fence 不能在阻碍提交的回调中等待。
 - 超时代表调用方等待预算耗尽，不代表 graphExecute 已取消。仍在使用的 context/buffer/library 不能释放或重用；先停止新请求，隔离旧工作，再按后端能力退出/恢复。
+- execution failure 使用完整帧身份，只把匹配请求标为失败并失效当前代 history，不证明底层工作已静止；资源和 candidate history 继续隔离，必须等独立的匹配 completion 才能回收。旧代失败只能改变对应隔离项，不能污染当前代 history。
+- close 使用包含当前 `history_generation` 的 context 身份；旧代 close 拒绝。close 不递增 generation，也不隐式取消、完成或释放工作：active 原样转为 isolated，context 在所有匹配 completion/result_consumed 回收前保持 `closing`，最后才是 `closed`。close 后仅接受这些带完整身份的回收事件；待消费 success 也只表示资源回收，不能提交 candidate history。永不完成的对象永久保持隔离/阻塞，不能报告为已取消或安全销毁。
 - 断连、device loss、服务重启、休眠恢复均产生可观察事件。自动 DSP reset 不属于默认恢复动作。
 
 `draft-0` 建议由原生 context 所有者作为 generation 的唯一权威：M2 离线时是执行器，M4 接入时是 daemon。创建回复给出初始 generation；适配器显式 reset 时发送带当前 generation 和 `request_id` 的请求，服务等待或隔离旧工作、失效/初始化历史后递增并回复新 generation，适配器随后才发送该代帧。`request_id` 在一个 context 生命周期内必须唯一且不可复用；有限窗口淘汰后，服务无法永久区分 opaque ID 的历史复用与新请求。保留窗口内的重复 reset 返回同一结果，不重复递增；窗口外带旧 generation 的重复请求拒绝并要求重新同步。帧中的 reset 来源仅作记录，不再触发第二次递增。服务检测到连续性丢失时拒绝继续并要求重新握手/reset，不能单方换代后默默接受旧代输入。M4-A 实施前用 ADR 冻结此流程或替代流程，并同步 M2/M5 与协议测试。

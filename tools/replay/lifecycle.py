@@ -173,6 +173,7 @@ class LifecycleContext:
         self._last_committed_frame: int | None = None
         self._consumed: dict[tuple[str, ...], bool] = {}
         self._reset_results: dict[str, tuple[str, str]] = {}
+        self._closed = False
         self._lock = threading.RLock()
 
     @property
@@ -183,6 +184,8 @@ class LifecycleContext:
     @property
     def state(self) -> str:
         with self._lock:
+            if self._closed:
+                return "closing" if self._isolated else "closed"
             if self._active_state is not None:
                 return self._active_state
             return "invalid" if self._history_invalid else "ready"
@@ -271,6 +274,8 @@ class LifecycleContext:
     def submit(self, request: Any, history: Any, motion_vectors: Any) -> None:
         checked = _identity(request, "request")
         with self._lock:
+            if self._closed:
+                _fail("request", "context is closed")
             if self._active_identity is not None:
                 _fail("request", "context already has an active request")
             if self._history_invalid:
@@ -325,22 +330,34 @@ class LifecycleContext:
             key = _identity_key(checked)
             isolated = self._isolated.get(key)
             if isolated is not None:
-                if isolated["state"] not in ("executing", "executing_timed_out"):
+                if isolated["state"] not in (
+                    "executing",
+                    "executing_timed_out",
+                    "execution_failed",
+                ):
                     _fail("completion", "isolated request already awaits result consumption")
                 del self._isolated[key]
-                completed = int(checked["frame_id"])
-                if self._last_completed_frame is None or completed > self._last_completed_frame:
-                    self._last_completed_frame = completed
+                if not self._closed:
+                    completed = int(checked["frame_id"])
+                    if (
+                        self._last_completed_frame is None
+                        or completed > self._last_completed_frame
+                    ):
+                        self._last_completed_frame = completed
                 return None
 
             self._require_active_match(checked, "completion")
             assert self._active_state is not None
-            if self._active_state not in ("executing", "executing_timed_out"):
+            if self._active_state not in (
+                "executing",
+                "executing_timed_out",
+                "execution_failed",
+            ):
                 _fail("completion", "active request has already completed")
             output = self._active_output
             assert output is not None
             self._last_completed_frame = int(checked["frame_id"])
-            if self._active_state == "executing_timed_out":
+            if self._active_state in ("executing_timed_out", "execution_failed"):
                 self._active_identity = None
                 self._active_output = None
                 self._active_candidate_history = None
@@ -350,11 +367,39 @@ class LifecycleContext:
             self._active_state = "pending_consumption"
             return copy.deepcopy(output)
 
+    def execution_failed(self, failure: Any) -> None:
+        """Record execution failure without claiming retained work has stopped."""
+
+        checked = _identity(failure, "execution_failure")
+        with self._lock:
+            if self._closed:
+                _fail("execution_failure", "context is closed")
+            key = _identity_key(checked)
+            isolated = self._isolated.get(key)
+            if isolated is not None:
+                if isolated["state"] == "execution_failed":
+                    return
+                if isolated["state"] not in ("executing", "executing_timed_out"):
+                    _fail("execution_failure", "isolated request is not executing")
+                isolated["state"] = "execution_failed"
+                return
+
+            self._require_active_match(checked, "execution_failure")
+            assert self._active_state is not None
+            if self._active_state == "execution_failed":
+                return
+            if self._active_state not in ("executing", "executing_timed_out"):
+                _fail("execution_failure", "active request is not executing")
+            self._active_state = "execution_failed"
+            self._invalidate_history()
+
     def timeout(self, request: Any) -> None:
         """Record a caller timeout without claiming retained work has stopped."""
 
         checked = _identity(request, "timeout")
         with self._lock:
+            if self._closed:
+                _fail("timeout", "context is closed")
             key = _identity_key(checked)
             isolated = self._isolated.get(key)
             if isolated is not None:
@@ -439,6 +484,8 @@ class LifecycleContext:
         checked_request_id = _nonempty_id(request_id, "reset.request_id")
         checked_expected = _decimal_id(expected_generation, "reset.history_generation")
         with self._lock:
+            if self._closed:
+                _fail("reset", "context is closed")
             previous_reset = self._reset_results.get(checked_request_id)
             if previous_reset is not None:
                 previous_expected, previous_result = previous_reset
@@ -474,6 +521,33 @@ class LifecycleContext:
                 checked_request_id, checked_expected, next_generation
             )
             return next_generation
+
+    def close(self, identity: Any) -> None:
+        """Close the context while retaining any work that may still be in flight."""
+
+        checked = _identity(identity, "close", fixed=True)
+        with self._lock:
+            for field in _FIXED_ID_FIELDS:
+                if checked[field] != self._identity[field]:
+                    _fail(f"close.{field}", "does not match the bound context identity")
+            if self._closed:
+                return
+            if self._active_identity is not None:
+                key = _identity_key(self._active_identity)
+                self._isolated[key] = {
+                    "identity": dict(self._active_identity),
+                    "output": self._active_output,
+                    "candidate_history": self._active_candidate_history,
+                    "state": self._active_state,
+                    "capacity_cells": self._active_capacity_cells,
+                }
+                self._active_identity = None
+                self._active_output = None
+                self._active_candidate_history = None
+                self._active_capacity_cells = 0
+                self._active_state = None
+            self._invalidate_history()
+            self._closed = True
 
 
 def _validate_expected_grid(value: Any, actual: list[list[int | None]]) -> None:

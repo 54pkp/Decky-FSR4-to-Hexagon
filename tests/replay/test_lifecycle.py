@@ -372,6 +372,181 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNone(context.committed_history)
         self.assertIsNone(context.last_committed_frame_id)
 
+    def test_execution_failure_retains_resources_until_matching_completion(self):
+        context = self.new_context()
+        self.submit(context)
+        retained_before = context.retained_resource_capacity_cells
+
+        context.execution_failed(self.scenario["request"])
+        context.execution_failed(self.scenario["request"])
+        self.assertEqual("execution_failed", context.state)
+        self.assertEqual(self.scenario["request"], context.active_identity)
+        self.assertEqual(1, context.retained_resource_count)
+        self.assertEqual(retained_before, context.retained_resource_capacity_cells)
+        self.assertIsNone(context.committed_history)
+
+        next_request = copy.deepcopy(self.scenario["request"])
+        next_request["frame_id"] = "2"
+        self.assert_invalid(lambda: self.submit(context, next_request), "active request")
+        replacements = {
+            "service_instance_id": "service-wrong",
+            "session_id": "session-wrong",
+            "context_id": "context-wrong",
+            "frame_id": "9",
+            "history_generation": "1",
+            "model_manifest_id": "synthetic-wrong",
+        }
+        for field, replacement in replacements.items():
+            with self.subTest(field=field):
+                mismatch = copy.deepcopy(self.scenario["request"])
+                mismatch[field] = replacement
+                self.assert_invalid(
+                    lambda: context.execution_failed(mismatch),
+                    f"execution_failure.{field}",
+                )
+                self.assertEqual("execution_failed", context.state)
+                self.assertEqual(1, context.retained_resource_count)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertEqual("invalid", context.state)
+        self.assert_invalid(lambda: self.submit(context, next_request), "reset is required")
+
+    def test_execution_failure_rejects_pending_result_without_state_change(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        retained_before = context.retained_resource_capacity_cells
+
+        self.assert_invalid(
+            lambda: context.execution_failed(self.scenario["request"]),
+            "active request is not executing",
+        )
+        self.assertEqual("pending_consumption", context.state)
+        self.assertEqual(retained_before, context.retained_resource_capacity_cells)
+        self.assertIsNone(context.committed_history)
+
+    def test_late_old_generation_failure_cannot_pollute_new_history(self):
+        context = self.new_context()
+        self.submit(context)
+        context.reset("failure-reset", "0")
+
+        current = copy.deepcopy(self.scenario["request"])
+        current["frame_id"] = "2"
+        current["history_generation"] = "1"
+        current_history = [[9, 8, 7], [6, 5, 4], [3, 2, 1]]
+        context.submit(current, current_history, self.scenario["motion_vectors"])
+        context.complete(current)
+        context.result_consumed(current, True)
+        committed_before = context.committed_history
+
+        context.execution_failed(self.scenario["request"])
+        context.execution_failed(self.scenario["request"])
+        self.assertEqual(committed_before, context.committed_history)
+        self.assertEqual("ready", context.state)
+        self.assertEqual(1, context.isolated_resource_count)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual(0, context.isolated_resource_count)
+        self.assertEqual(committed_before, context.committed_history)
+
+    def test_close_during_execution_is_idempotent_and_waits_for_completion(self):
+        context = self.new_context()
+        self.submit(context)
+        retained_before = context.retained_resource_capacity_cells
+
+        replacements = {
+            "service_instance_id": "service-wrong",
+            "session_id": "session-wrong",
+            "context_id": "context-wrong",
+            "history_generation": "1",
+            "model_manifest_id": "synthetic-wrong",
+        }
+        for field, replacement in replacements.items():
+            with self.subTest(field=field):
+                mismatch = copy.deepcopy(self.scenario["context"])
+                mismatch[field] = replacement
+                self.assert_invalid(lambda: context.close(mismatch), f"close.{field}")
+                self.assertEqual(self.scenario["request"], context.active_identity)
+
+        context.close(self.scenario["context"])
+        context.close(self.scenario["context"])
+        self.assertEqual("closing", context.state)
+        self.assertIsNone(context.active_identity)
+        self.assertEqual(1, context.isolated_resource_count)
+        self.assertEqual(retained_before, context.retained_resource_capacity_cells)
+        self.assertIsNone(context.committed_history)
+
+        next_request = copy.deepcopy(self.scenario["request"])
+        next_request["frame_id"] = "2"
+        self.assert_invalid(lambda: self.submit(context, next_request), "context is closed")
+        self.assert_invalid(lambda: context.reset("closed-reset", "0"), "context is closed")
+        self.assert_invalid(
+            lambda: context.execution_failed(self.scenario["request"]),
+            "context is closed",
+        )
+        self.assert_invalid(
+            lambda: context.timeout(self.scenario["request"]), "context is closed"
+        )
+        mismatch = copy.deepcopy(self.scenario["request"])
+        mismatch["frame_id"] = "9"
+        self.assert_invalid(lambda: context.complete(mismatch), "completion")
+        self.assertEqual(1, context.isolated_resource_count)
+        self.assertEqual("closing", context.state)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertEqual("closed", context.state)
+        self.assertIsNone(context.last_completed_frame_id)
+        self.assert_invalid(
+            lambda: context.complete(self.scenario["request"]),
+            "no active request",
+        )
+
+    def test_close_pending_result_requires_consumption_and_never_commits(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.close(self.scenario["context"])
+
+        self.assertEqual("closing", context.state)
+        self.assertEqual(1, context.isolated_resource_count)
+        self.assert_invalid(
+            lambda: context.complete(self.scenario["request"]),
+            "awaits result consumption",
+        )
+        self.assertEqual(1, context.isolated_resource_count)
+
+        context.result_consumed(self.scenario["request"], True)
+        context.result_consumed(self.scenario["request"], True)
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertIsNone(context.committed_history)
+        self.assertIsNone(context.last_committed_frame_id)
+        self.assertEqual("closed", context.state)
+
+    def test_close_preserves_timed_out_isolated_work_until_explicit_completion(self):
+        context = self.new_context()
+        self.submit(context)
+        context.timeout(self.scenario["request"])
+        context.reset("timeout-reset-before-close", "0")
+        current_identity = copy.deepcopy(self.scenario["context"])
+        current_identity["history_generation"] = "1"
+        self.assert_invalid(
+            lambda: context.close(self.scenario["context"]),
+            "close.history_generation",
+        )
+        context.close(current_identity)
+
+        self.assertEqual("closing", context.state)
+        self.assertEqual(1, context.isolated_resource_count)
+        retained_before = context.retained_resource_capacity_cells
+        context.close(current_identity)
+        self.assertEqual(retained_before, context.retained_resource_capacity_cells)
+        self.assertEqual(1, context.isolated_resource_count)
+
+        self.assertIsNone(context.complete(self.scenario["request"]))
+        self.assertEqual(0, context.retained_resource_count)
+
     def test_reset_is_idempotent_advances_generation_and_keeps_frame_monotonic(self):
         context = self.new_context()
         self.submit(context)
