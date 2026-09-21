@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from tests.abi.fixtures import elf32, elf64, pe64
 
@@ -34,6 +35,54 @@ class InspectorTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def _elf_verneed_layout(self, payload: bytes) -> dict[str, int | str]:
+        bitness = 32 if payload[4] == 1 else 64
+        endian = "<" if payload[5] == 1 else ">"
+        if bitness == 32:
+            phoff = struct.unpack_from(endian + "I", payload, 28)[0]
+            phentsize, phnum = struct.unpack_from(endian + "HH", payload, 42)
+        else:
+            phoff = struct.unpack_from(endian + "Q", payload, 32)[0]
+            phentsize, phnum = struct.unpack_from(endian + "HH", payload, 54)
+
+        load_offset = load_vaddr = dynamic_offset = dynamic_size = None
+        for index in range(phnum):
+            offset = phoff + index * phentsize
+            if bitness == 32:
+                p_type, p_offset, p_vaddr, _, p_filesz = struct.unpack_from(
+                    endian + "IIIII", payload, offset
+                )
+            else:
+                p_type, _, p_offset, p_vaddr, _, p_filesz = struct.unpack_from(
+                    endian + "IIQQQQ", payload, offset
+                )
+            if p_type == 1:
+                load_offset, load_vaddr = p_offset, p_vaddr
+            elif p_type == 2:
+                dynamic_offset, dynamic_size = p_offset, p_filesz
+
+        assert load_offset is not None and load_vaddr is not None
+        assert dynamic_offset is not None and dynamic_size is not None
+        entry_size = 8 if bitness == 32 else 16
+        entry_format = endian + ("iI" if bitness == 32 else "qQ")
+        tags: dict[int, tuple[int, int]] = {}
+        for offset in range(dynamic_offset, dynamic_offset + dynamic_size, entry_size):
+            tag, value = struct.unpack_from(entry_format, payload, offset)
+            tags[tag] = (offset, value)
+            if tag == 0:
+                break
+
+        def map_vaddr(address: int) -> int:
+            return load_offset + address - load_vaddr
+
+        return {
+            "endian": endian,
+            "word_format": "I" if bitness == 32 else "Q",
+            "strsz": tags[10][1],
+            "verneed_offset": map_vaddr(tags[0x6FFFFFFE][1]),
+            "verneednum_value_offset": tags[0x6FFFFFFF][0] + entry_size // 2,
+        }
 
     def test_pe_reports_windows_machine_bitness_and_unknown_sdk(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -147,6 +196,99 @@ class InspectorTests(unittest.TestCase):
                 with self.assertRaises(inspector.AbiError) as caught:
                     inspector.inspect_file(path)
             self.assertIn(message, str(caught.exception))
+
+    def test_multiple_verneed_records_parse_across_class_and_endianness(self):
+        requirements = (
+            ("libc.so.6", ("GLIBC_2.17", "GLIBC_2.28")),
+            ("libpthread.so.0", ("GLIBC_2.4", "OTHER_1.0", "GLIBC_2.34")),
+        )
+        variants = (
+            (
+                "elf32-le",
+                elf32,
+                {"machine": 3, "endianness": "little"},
+                "/lib/ld-linux.so.2",
+            ),
+            (
+                "elf64-be",
+                elf64,
+                {"machine": 183, "endianness": "big"},
+                "/lib/ld-linux-aarch64.so.1",
+            ),
+        )
+        for name, builder, builder_args, interpreter in variants:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                payload = builder(
+                    **builder_args,
+                    interpreter=interpreter,
+                    needed=("libc.so.6", "libpthread.so.0"),
+                    version_requirements=requirements,
+                )
+                path = self._write(directory, name + "-verneed.so", payload)
+                report = inspector.inspect_file(path)
+            self.assertEqual("linux_glibc_candidate", report["candidate"])
+            self.assertEqual(["libc.so.6", "libpthread.so.0"], report["needed"])
+            self.assertEqual(
+                ["GLIBC_2.17", "GLIBC_2.28", "GLIBC_2.34", "GLIBC_2.4"],
+                report["glibc_versions"],
+            )
+
+    def test_malformed_multiple_verneed_record_chains_are_rejected(self):
+        requirements = (
+            ("libc.so.6", ("GLIBC_2.17", "GLIBC_2.28")),
+            ("libpthread.so.0", ("GLIBC_2.4",)),
+        )
+        base_payload = elf64(
+            machine=183,
+            endianness="big",
+            version_requirements=requirements,
+        )
+        layout = self._elf_verneed_layout(base_payload)
+        endian = str(layout["endian"])
+        word_format = str(layout["word_format"])
+        first = int(layout["verneed_offset"])
+        second = first + 16 + 2 * 16
+        strsz = int(layout["strsz"])
+
+        premature = bytearray(base_payload)
+        struct.pack_into(endian + "I", premature, first + 12, 0)
+
+        nonzero_tail = bytearray(base_payload)
+        struct.pack_into(endian + "I", nonzero_tail, second + 12, 16)
+
+        count_mismatch = bytearray(base_payload)
+        struct.pack_into(
+            endian + word_format,
+            count_mismatch,
+            int(layout["verneednum_value_offset"]),
+            3,
+        )
+
+        bad_provider = bytearray(base_payload)
+        struct.pack_into(endian + "I", bad_provider, first + 4, strsz)
+
+        bad_name = bytearray(base_payload)
+        struct.pack_into(endian + "I", bad_name, first + 16 + 8, strsz)
+
+        for name, payload, message in (
+            ("premature.so", premature, "ends before DT_VERNEEDNUM"),
+            ("nonzero-tail.so", nonzero_tail, "exceeds DT_VERNEEDNUM"),
+            ("count-mismatch.so", count_mismatch, "ends before DT_VERNEEDNUM"),
+            ("provider-bounds.so", bad_provider, "version dependency 0"),
+            ("name-bounds.so", bad_name, "version name 0:0"),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                path = self._write(directory, name, bytes(payload))
+                with self.assertRaises(inspector.AbiError) as caught:
+                    inspector.inspect_file(path)
+            self.assertIn(message, str(caught.exception))
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(directory, "aggregate-limit.so", base_payload)
+            with mock.patch.object(inspector, "MAX_VERSION_AUXILIARIES", 2):
+                with self.assertRaises(inspector.AbiError) as caught:
+                    inspector.inspect_file(path)
+        self.assertIn("total version auxiliary count", str(caught.exception))
 
     def test_elf_header_size_and_program_table_overlap_are_rejected(self):
         cases = []

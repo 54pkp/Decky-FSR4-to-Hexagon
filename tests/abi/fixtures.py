@@ -43,12 +43,21 @@ def elf_image(
     interpreter: str | None = None,
     needed: tuple[str, ...] = (),
     glibc_versions: tuple[str, ...] = (),
+    version_requirements: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> bytes:
     """Build a small ELF image whose load segment maps the whole file."""
     if bitness not in (32, 64):
         raise ValueError("ELF fixture bitness must be 32 or 64")
     if endianness not in ("little", "big"):
         raise ValueError("ELF fixture endianness must be 'little' or 'big'")
+    if glibc_versions and version_requirements:
+        raise ValueError(
+            "use glibc_versions or version_requirements, not both"
+        )
+    if glibc_versions:
+        version_requirements = (("libc.so.6", glibc_versions),)
+    if any(not provider or not versions for provider, versions in version_requirements):
+        raise ValueError("each ELF version requirement needs a provider and versions")
 
     elf_class = 1 if bitness == 32 else 2
     data_encoding = 1 if endianness == "little" else 2
@@ -58,7 +67,7 @@ def elf_image(
     dynamic_entry_size = 8 if bitness == 32 else 16
     payload_alignment = 4 if bitness == 32 else 8
 
-    phnum = 1 + (interpreter is not None) + bool(needed or glibc_versions)
+    phnum = 1 + (interpreter is not None) + bool(needed or version_requirements)
     phoff = header_size
     cursor = phoff + phnum * program_header_size
     payloads: list[tuple[str, int, bytes]] = []
@@ -115,16 +124,21 @@ def elf_image(
     string_offset = 0
     string_table = bytearray(b"\0")
     string_offsets: dict[str, int] = {}
-    for value in (*needed, "libc.so.6" if glibc_versions else "", *glibc_versions):
+    version_strings = tuple(
+        value
+        for provider, versions in version_requirements
+        for value in (provider, *versions)
+    )
+    for value in (*needed, *version_strings):
         if not value or value in string_offsets:
             continue
         string_offsets[value] = len(string_table)
         string_table.extend(value.encode("ascii") + b"\0")
 
     base = 0x400000
-    if needed or glibc_versions:
+    if needed or version_requirements:
         dynamic_offset = cursor
-        entry_count = len(needed) + 3 + (2 if glibc_versions else 0)
+        entry_count = len(needed) + 3 + (2 if version_requirements else 0)
         dynamic_size = entry_count * dynamic_entry_size
         cursor += dynamic_size
         string_offset = cursor
@@ -133,29 +147,37 @@ def elf_image(
         cursor = align(cursor)
         verneed_offset = 0
         verneed = b""
-        if glibc_versions:
+        if version_requirements:
             verneed_offset = cursor
-            aux = bytearray()
-            for index, version in enumerate(glibc_versions):
-                next_offset = 16 if index + 1 < len(glibc_versions) else 0
-                aux.extend(
+            records = bytearray()
+            for record_index, (provider, versions) in enumerate(version_requirements):
+                record_size = 16 + len(versions) * 16
+                next_record = (
+                    record_size if record_index + 1 < len(version_requirements) else 0
+                )
+                records.extend(
                     struct.pack(
-                        endian + "IHHII",
-                        0,
-                        0,
-                        index + 2,
-                        string_offsets[version],
-                        next_offset,
+                        endian + "HHIII",
+                        1,
+                        len(versions),
+                        string_offsets[provider],
+                        16,
+                        next_record,
                     )
                 )
-            verneed = struct.pack(
-                endian + "HHIII",
-                1,
-                len(glibc_versions),
-                string_offsets["libc.so.6"],
-                16,
-                0,
-            ) + bytes(aux)
+                for aux_index, version in enumerate(versions):
+                    next_aux = 16 if aux_index + 1 < len(versions) else 0
+                    records.extend(
+                        struct.pack(
+                            endian + "IHHII",
+                            0,
+                            0,
+                            aux_index + 2,
+                            string_offsets[version],
+                            next_aux,
+                        )
+                    )
+            verneed = bytes(records)
             payloads.append(("verneed", cursor, verneed))
             cursor += len(verneed)
 
@@ -164,9 +186,9 @@ def elf_image(
             dynamic.extend(dynamic_entry(1, string_offsets[library]))
         dynamic.extend(dynamic_entry(5, base + string_offset))
         dynamic.extend(dynamic_entry(10, len(string_table)))
-        if glibc_versions:
+        if version_requirements:
             dynamic.extend(dynamic_entry(0x6FFFFFFE, base + verneed_offset))
-            dynamic.extend(dynamic_entry(0x6FFFFFFF, 1))
+            dynamic.extend(dynamic_entry(0x6FFFFFFF, len(version_requirements)))
         dynamic.extend(dynamic_entry(0, 0))
         assert len(dynamic) == dynamic_size
         payloads.append(("dynamic", dynamic_offset, bytes(dynamic)))
@@ -221,7 +243,7 @@ def elf_image(
     program_headers.append(
         program_header(1, 5, 0, base, final_size, final_size, 0x1000)
     )
-    if needed or glibc_versions:
+    if needed or version_requirements:
         program_headers.append(
             program_header(
                 2,
@@ -248,6 +270,7 @@ def elf32(
     interpreter: str | None = None,
     needed: tuple[str, ...] = (),
     glibc_versions: tuple[str, ...] = (),
+    version_requirements: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> bytes:
     return elf_image(
         bitness=32,
@@ -256,6 +279,7 @@ def elf32(
         interpreter=interpreter,
         needed=needed,
         glibc_versions=glibc_versions,
+        version_requirements=version_requirements,
     )
 
 
@@ -266,6 +290,7 @@ def elf64(
     interpreter: str | None = None,
     needed: tuple[str, ...] = (),
     glibc_versions: tuple[str, ...] = (),
+    version_requirements: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> bytes:
     return elf_image(
         bitness=64,
@@ -274,4 +299,5 @@ def elf64(
         interpreter=interpreter,
         needed=needed,
         glibc_versions=glibc_versions,
+        version_requirements=version_requirements,
     )

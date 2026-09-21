@@ -21,6 +21,7 @@ MAX_PE_SECTIONS = 96
 MAX_DYNAMIC_ENTRIES = 4096
 MAX_NEEDED = 128
 MAX_VERSION_RECORDS = 1024
+MAX_VERSION_AUXILIARIES = 4096
 MAX_STRING_TABLE_BYTES = 1 << 20
 MAX_STRING_BYTES = 4096
 SCOPE_DISCLAIMER = (
@@ -353,6 +354,7 @@ def _parse_elf(data: bytes, path: Path, sdk_version: str) -> dict[str, Any]:
         record_relative = 0
         visited_records: set[int] = set()
         version_names: set[str] = set()
+        total_auxiliaries = 0
         for record_index in range(count):
             if record_relative in visited_records:
                 raise AbiError("ELF version-requirement list contains a cycle")
@@ -365,6 +367,11 @@ def _parse_elf(data: bytes, path: Path, sdk_version: str) -> dict[str, Any]:
             )
             if vn_version != 1 or not 1 <= vn_count <= MAX_VERSION_RECORDS:
                 raise AbiError("ELF version-requirement record is malformed")
+            if vn_count > MAX_VERSION_AUXILIARIES - total_auxiliaries:
+                raise AbiError(
+                    "ELF total version auxiliary count exceeds the safety limit"
+                )
+            total_auxiliaries += vn_count
             _cstring(
                 string_table,
                 vn_file,
