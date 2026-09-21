@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -22,8 +23,6 @@ except ImportError:
 class Fixture:
     def __init__(self, root: Path):
         self.root = root
-        self.sdk = root / "sdk"
-        self.sdk.mkdir()
         names = (
             "sdk.yaml",
             "bin/x86_64-windows-msvc/qairt-converter",
@@ -33,21 +32,43 @@ class Fixture:
             "lib/x86_64-windows-msvc/QnnCpu.dll",
             "lib/x86_64-windows-msvc/QnnModelDlc.dll",
         )
+        payloads = {}
         files = {}
         for index, name in enumerate(names):
-            path = self.sdk / name
-            path.parent.mkdir(parents=True, exist_ok=True)
             payload = f"fake-{index}".encode()
-            path.write_bytes(payload)
+            payloads[name] = payload
             files[name] = (len(payload), hashlib.sha256(payload).hexdigest())
+        payloads.update(
+            {
+                "lib/python/qti/__init__.py": b"",
+                "lib/python/qti/aisw/__init__.py": b"",
+                "lib/python/qti/aisw/converters/onnx/onnx_to_ir.py": b"VALUE = 1\n",
+                "lib/python/qti/aisw/converters/common/dlc_quantizer.py": b"VALUE = 2\n",
+                "lib/python/qti/aisw/dlc_utils/snpe_dlc_utils.py": b"VALUE = 3\n",
+                "lib/x86_64-windows-msvc/helper.dll": b"bound-helper",
+            }
+        )
+        self.archive_root = "qairt/test"
+        self.archive = root / "qairt.zip"
+        with zipfile.ZipFile(self.archive, "w", compression=zipfile.ZIP_STORED) as package:
+            for name, payload in payloads.items():
+                package.writestr(f"{self.archive_root}/{name}", payload)
         self.qairt_python = root / "qairt-python.exe"
         self.reference_python = root / "reference-python.exe"
         self.model = root / "model.onnx"
         for path in (self.qairt_python, self.reference_python, self.model):
             path.write_bytes(path.name.encode())
-        self.profile = pipeline.PipelineProfile("2.49.0", "260730134355", files, hashlib.sha256(self.model.read_bytes()).hexdigest())
+        self.profile = pipeline.PipelineProfile(
+            "2.49.0", "260730134355", files,
+            self.archive.stat().st_size,
+            hashlib.sha256(self.archive.read_bytes()).hexdigest(),
+            self.archive_root,
+            len(payloads) - 1,
+            sum(len(payload) for name, payload in payloads.items() if name != "sdk.yaml"),
+            hashlib.sha256(self.model.read_bytes()).hexdigest(),
+        )
         self.p3 = root / "p3.json"
-        self.p3.write_text(json.dumps({"schema_version": "qairt-windows-host-probe-v1", "profile": "QAIRT-2.49.0.260730-windows-x86_64", "sdk": {"version": "2.49.0", "build_id": "260730134355"}, "selected_files": [{"path": name, "bytes": size, "sha256": digest} for name, (size, digest) in files.items()]}), encoding="utf-8")
+        self.p3.write_text(json.dumps({"schema_version": "qairt-windows-host-probe-v1", "profile": "QAIRT-2.49.0.260730-windows-x86_64", "sdk": {"version": "2.49.0", "build_id": "260730134355"}, "archive": {"bytes": self.profile.archive_size, "sha256": self.profile.archive_sha256, "archive_root": self.profile.archive_root, "runtime_snapshot": {"file_count": self.profile.runtime_file_count, "uncompressed_bytes": self.profile.runtime_uncompressed_bytes}}, "selected_files": [{"path": name, "bytes": size, "sha256": digest} for name, (size, digest) in files.items()]}), encoding="utf-8")
         self.work = root / "work"
         self.output = root / "output"
         self.calls: list[list[str]] = []
@@ -58,6 +79,9 @@ class Fixture:
         self.cpu_delta = 0.0
         self.constant_cpu = False
         self.fail_stage: str | None = None
+        self.mutate_stage: str | None = None
+        self.mutate_relative = "lib/python/qti/aisw/converters/onnx/onnx_to_ir.py"
+        self.outside_import: Path | None = None
 
     def runner(self, argv, env, cwd, stdout, stderr, timeout):
         args = list(argv)
@@ -67,7 +91,20 @@ class Fixture:
         stderr.write_text("", encoding="utf-8")
         if stage == self.fail_stage:
             return 9
-        if stage == "reference_export":
+        if stage == "import_origin":
+            python_root = Path(env["PYTHONPATH"])
+            origins = [
+                python_root / "qti/aisw/converters/onnx/onnx_to_ir.py",
+                python_root / "qti/aisw/converters/common/dlc_quantizer.py",
+                python_root / "qti/aisw/dlc_utils/snpe_dlc_utils.py",
+            ]
+            if self.outside_import is not None:
+                origins.append(self.outside_import)
+            stdout.write_text(
+                pipeline.IMPORT_PROBE_PREFIX + json.dumps([str(path.resolve()) for path in origins]),
+                encoding="utf-8",
+            )
+        elif stage == "reference_export":
             output = Path(args[args.index("--output") + 1])
             output.mkdir()
             input_lines = []
@@ -122,10 +159,13 @@ class Fixture:
                 folder.mkdir()
                 value = 0.25 if self.constant_cpu else index + 0.25
                 np.full(16, value + self.cpu_delta, dtype="<f4").tofile(folder / "reference_output.raw")
+        if stage == self.mutate_stage:
+            target = Path(env["QAIRT_SDK_ROOT"]) / self.mutate_relative
+            target.write_bytes(target.read_bytes() + b"tampered")
         return 0
 
     def run(self):
-        return pipeline.run_pipeline(self.sdk, self.qairt_python, self.reference_python, self.model, self.work, self.output, self.p3, profile=self.profile, runner=self.runner)
+        return pipeline.run_pipeline(self.archive, self.qairt_python, self.reference_python, self.model, self.work, self.output, self.p3, profile=self.profile, runner=self.runner)
 
 
 @unittest.skipUnless(
@@ -138,17 +178,22 @@ class PipelineTests(unittest.TestCase):
             fx = Fixture(Path(directory))
             receipt = fx.run()
             self.assertEqual("QNN_CPU", receipt["backend"])
-            converter = fx.calls[1]
+            self.assertEqual("fixed_private_archive_snapshot", receipt["sdk"]["execution_source"])
+            self.assertEqual(fx.profile.runtime_file_count + 1, receipt["sdk"]["closure"]["file_count"])
+            self.assertTrue(receipt["sdk"]["import_origins"])
+            converter = fx.calls[2]
             self.assertEqual("HTP", converter[converter.index("--target_backend") + 1])
             self.assertIn("--source_model_input_shape", converter)
-            quantizer = fx.calls[2]
+            quantizer = fx.calls[3]
             for option, value in (("--act_bitwidth", "8"), ("--weights_bitwidth", "8"), ("--bias_bitwidth", "32"), ("--target_backend", "HTP")):
                 self.assertEqual(value, quantizer[quantizer.index(option) + 1])
             self.assertIn("--dump_encoding_json", quantizer)
-            self.assertIn("--display_all_encodings", fx.calls[3])
-            self.assertEqual(str(fx.sdk / "lib/x86_64-windows-msvc/QnnModelDlc.dll"), fx.calls[4][fx.calls[4].index("--model") + 1])
+            self.assertIn("--display_all_encodings", fx.calls[4])
+            model_path = Path(fx.calls[5][fx.calls[5].index("--model") + 1])
+            self.assertEqual("QnnModelDlc.dll", model_path.name)
+            self.assertNotEqual(fx.root, model_path.parents[3])
             self.assertTrue((fx.output / "success_receipt.json").is_file())
-            self.assertEqual(5, len(receipt["stages"]))
+            self.assertEqual(6, len(receipt["stages"]))
             self.assertEqual(0.01, receipt["tolerance"]["absolute"])
             self.assertEqual("not_run", receipt["not_run"]["htp_execution"])
             self.assertEqual(hashlib.sha256(Path(pipeline.__file__).read_bytes()).hexdigest(), receipt["inputs"]["pipeline_script"]["sha256"])
@@ -266,14 +311,81 @@ class PipelineTests(unittest.TestCase):
                 with self.assertRaisesRegex(pipeline.PipelineError, message):
                     pipeline._compare_cpu(export, cpu)
 
+    def test_snapshot_rejects_python_or_native_replacement_between_stages(self):
+        for relative in (
+            "lib/python/qti/aisw/converters/onnx/onnx_to_ir.py",
+            "lib/x86_64-windows-msvc/helper.dll",
+        ):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                fx = Fixture(Path(directory))
+                fx.mutate_stage = "converter"
+                fx.mutate_relative = relative
+                with self.assertRaisesRegex(pipeline.PipelineError, "SDK snapshot file changed"):
+                    fx.run()
+                self.assertFalse(fx.output.exists())
+
+    def test_import_origin_outside_snapshot_is_rejected_before_converter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = Fixture(Path(directory))
+            outside = fx.root / "injected.py"
+            outside.write_text("VALUE = 9\n", encoding="utf-8")
+            fx.outside_import = outside
+            with self.assertRaisesRegex(pipeline.PipelineError, "escaped fixed SDK snapshot"):
+                fx.run()
+            self.assertEqual(2, len(fx.calls))
+            self.assertFalse(fx.output.exists())
+
+    def test_p3_archive_identity_cannot_authorize_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = Fixture(Path(directory))
+            receipt = json.loads(fx.p3.read_text(encoding="utf-8"))
+            receipt["archive"]["sha256"] = "0" * 64
+            fx.p3.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(pipeline.PipelineError, "archive/runtime snapshot mismatch"):
+                fx.run()
+            self.assertFalse(fx.work.exists())
+
+    def test_malformed_p3_archive_objects_are_pipeline_errors(self):
+        for field, value, message in (
+            ("archive", None, "archive must be a JSON object"),
+            ("archive", [], "archive must be a JSON object"),
+            ("runtime_snapshot", None, "runtime snapshot must be a JSON object"),
+        ):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                fx = Fixture(Path(directory))
+                receipt = json.loads(fx.p3.read_text(encoding="utf-8"))
+                if field == "archive":
+                    receipt["archive"] = value
+                else:
+                    receipt["archive"][field] = value
+                fx.p3.write_text(json.dumps(receipt), encoding="utf-8")
+                with self.assertRaisesRegex(pipeline.PipelineError, message):
+                    fx.run()
+                self.assertFalse(fx.work.exists())
+
+    def test_snapshot_cleanup_failure_does_not_publish_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = Fixture(Path(directory))
+            with mock.patch.object(
+                pipeline,
+                "_remove_snapshot",
+                side_effect=pipeline.PipelineError("injected snapshot cleanup failure"),
+            ):
+                with self.assertRaisesRegex(
+                    pipeline.PipelineError, "injected snapshot cleanup failure"
+                ):
+                    fx.run()
+            self.assertTrue(fx.work.is_dir())
+            self.assertFalse(fx.output.exists())
+
     def test_hash_overwrite_and_whitespace_paths_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             fx = Fixture(Path(directory)); fx.output.mkdir()
             with self.assertRaisesRegex(pipeline.PipelineError, "already exists"):
                 fx.run()
         with tempfile.TemporaryDirectory() as directory:
-            fx = Fixture(Path(directory)); (fx.sdk / "sdk.yaml").write_bytes(b"tampered")
-            with self.assertRaisesRegex(pipeline.PipelineError, "hash/size"):
+            fx = Fixture(Path(directory)); fx.archive.write_bytes(fx.archive.read_bytes() + b"tampered")
+            with self.assertRaisesRegex(pipeline.PipelineError, "archive"):
                 fx.run()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); fx = Fixture(root); fx.work = root / "bad work"

@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.qairt.probe import DEFAULT_PROFILE
+from tools.qairt.probe import DEFAULT_PROFILE, ProbeError, _archive_runtime
 
 
 SCHEMA_VERSION = "qairt-small-graph-pipeline-v1"
@@ -54,6 +54,11 @@ class PipelineProfile:
     version: str
     build_id: str
     files: Mapping[str, tuple[int, str]]
+    archive_size: int
+    archive_sha256: str
+    archive_root: str
+    runtime_file_count: int
+    runtime_uncompressed_bytes: int
     model_sha256: str = P5_MODEL_SHA256
 
 
@@ -72,6 +77,29 @@ PINNED_PROFILE = PipelineProfile(
         )
     }
     | SDK_EXTRA_FILES,
+    DEFAULT_PROFILE.archive_size,
+    DEFAULT_PROFILE.archive_sha256,
+    DEFAULT_PROFILE.archive_root,
+    DEFAULT_PROFILE.runtime_file_count,
+    DEFAULT_PROFILE.runtime_uncompressed_bytes,
+)
+
+IMPORT_PROBE_PREFIX = "QAIRT_IMPORT_ORIGINS="
+IMPORT_PROBE_MODULES = (
+    "qti.aisw.converters.onnx.onnx_to_ir",
+    "qti.aisw.converters.common.dlc_quantizer",
+    "qti.aisw.dlc_utils.snpe_dlc_utils",
+)
+IMPORT_PROBE = (
+    "import importlib,json,pathlib,sys;"
+    f"mods={IMPORT_PROBE_MODULES!r};"
+    "[importlib.import_module(name) for name in mods];"
+    "items=[];"
+    "[(items.extend([str(pathlib.Path(p).resolve()) for p in getattr(module,'__path__',[])]) "
+    "if getattr(module,'__path__',None) is not None else "
+    "items.append(str(pathlib.Path(module.__file__).resolve()))) "
+    "for name,module in sorted(sys.modules.items()) if name=='qti' or name.startswith('qti.')];"
+    f"print({IMPORT_PROBE_PREFIX!r}+json.dumps(sorted(set(items))))"
 )
 
 
@@ -121,6 +149,80 @@ def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, objec
         "bytes": path.stat().st_size,
         "sha256": _sha256(path),
     }
+
+
+def _snapshot_manifest(root: Path) -> dict[str, tuple[int, str]]:
+    manifest: dict[str, tuple[int, str]] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        value = os.stat(path, follow_symlinks=False)
+        if _is_reparse(value):
+            raise PipelineError(f"SDK snapshot contains a reparse point: {relative}")
+        if stat.S_ISDIR(value.st_mode):
+            continue
+        if not stat.S_ISREG(value.st_mode):
+            raise PipelineError(f"SDK snapshot contains a non-regular file: {relative}")
+        manifest[relative] = (value.st_size, _sha256(path))
+    return manifest
+
+
+def _verify_snapshot(root: Path, expected: Mapping[str, tuple[int, str]]) -> None:
+    actual = _snapshot_manifest(root)
+    if actual.keys() != expected.keys():
+        missing = sorted(expected.keys() - actual.keys())
+        added = sorted(actual.keys() - expected.keys())
+        raise PipelineError(
+            f"SDK snapshot file set changed; missing={missing[:3]!r}, added={added[:3]!r}"
+        )
+    for relative, expected_value in expected.items():
+        if actual[relative] != expected_value:
+            raise PipelineError(f"SDK snapshot file changed: {relative}")
+
+
+def _manifest_digest(manifest: Mapping[str, tuple[int, str]]) -> str:
+    payload = json.dumps(
+        [[name, size, digest] for name, (size, digest) in sorted(manifest.items())],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _remove_snapshot(root: Path) -> None:
+    try:
+        shutil.rmtree(root)
+    except OSError as exc:
+        raise PipelineError(f"cannot remove private SDK snapshot before publication: {exc}") from exc
+
+
+def _import_origins(stdout: Path, snapshot: Path, manifest: Mapping[str, tuple[int, str]]) -> list[str]:
+    try:
+        lines = stdout.read_text(encoding="utf-8").splitlines()
+        matches = [line[len(IMPORT_PROBE_PREFIX):] for line in lines if line.startswith(IMPORT_PROBE_PREFIX)]
+        if len(matches) != 1:
+            raise ValueError("expected one import-origin payload")
+        origins = json.loads(matches[0])
+        if not isinstance(origins, list) or not origins or any(not isinstance(item, str) for item in origins):
+            raise ValueError("origins must be a non-empty string list")
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise PipelineError(f"QAIRT import-origin probe returned invalid data: {exc}") from exc
+    python_root = snapshot / "lib" / "python"
+    result: list[str] = []
+    for origin in origins:
+        path = Path(origin)
+        try:
+            relative = path.relative_to(python_root).as_posix()
+        except ValueError as exc:
+            raise PipelineError(f"QAIRT import escaped fixed SDK snapshot: {origin}") from exc
+        snapshot_relative = f"lib/python/{relative}"
+        if path.is_file() and snapshot_relative not in manifest:
+            raise PipelineError(f"QAIRT import is not in fixed SDK manifest: {origin}")
+        if not path.is_file() and not any(
+            name == snapshot_relative or name.startswith(snapshot_relative.rstrip("/") + "/")
+            for name in manifest
+        ):
+            raise PipelineError(f"QAIRT namespace is not in fixed SDK manifest: {origin}")
+        result.append(snapshot_relative)
+    return sorted(set(result))
 
 
 def _read_json(path: Path, label: str) -> Any:
@@ -209,6 +311,23 @@ def _run_stage(name: str, argv: Sequence[str], env: Mapping[str, str], work: Pat
     if code != 0:
         raise PipelineError(f"stage {name} failed with exit code {code}")
     return record
+
+
+def _run_sdk_stage(
+    name: str,
+    argv: Sequence[str],
+    env: Mapping[str, str],
+    work: Path,
+    roots: Mapping[str, Path],
+    runner: Runner,
+    snapshot: Path,
+    manifest: Mapping[str, tuple[int, str]],
+) -> dict[str, object]:
+    _verify_snapshot(snapshot, manifest)
+    try:
+        return _run_stage(name, argv, env, work, roots, runner)
+    finally:
+        _verify_snapshot(snapshot, manifest)
 
 
 def _all_named(value: Any, target: str) -> list[dict[str, Any]]:
@@ -456,7 +575,7 @@ def _compare_cpu(export: Path, cpu: Path) -> list[dict[str, object]]:
 
 
 def run_pipeline(
-    sdk_root: Path,
+    sdk_archive: Path,
     qairt_python: Path,
     reference_python: Path,
     model: Path,
@@ -467,81 +586,181 @@ def run_pipeline(
     profile: PipelineProfile = PINNED_PROFILE,
     runner: Runner = _subprocess_runner,
 ) -> dict[str, object]:
-    sdk = Path(os.path.abspath(os.fspath(sdk_root)))
+    archive = Path(os.path.abspath(os.fspath(sdk_archive)))
     qairt_python = Path(os.path.abspath(os.fspath(qairt_python)))
     reference_python = Path(os.path.abspath(os.fspath(reference_python)))
     model = Path(os.path.abspath(os.fspath(model)))
     p3_receipt = Path(os.path.abspath(os.fspath(p3_receipt)))
     work = _safe_new_root(work_root, "work root")
     output = _safe_new_root(output_root, "output root")
-    output_parent_identity = (os.stat(output.parent, follow_symlinks=False).st_dev, os.stat(output.parent, follow_symlinks=False).st_ino)
+    output_parent_stat = os.stat(output.parent, follow_symlinks=False)
+    output_parent_identity = (output_parent_stat.st_dev, output_parent_stat.st_ino)
     if any(character.isspace() for character in str(work)):
         raise PipelineError("work root path must contain no whitespace")
-    for path, label in ((qairt_python, "QAIRT Python"), (reference_python, "reference Python"), (model, "P5 model"), (p3_receipt, "P3 receipt")):
+    for path, label in (
+        (archive, "QAIRT archive"), (qairt_python, "QAIRT Python"),
+        (reference_python, "reference Python"), (model, "P5 model"),
+        (p3_receipt, "P3 receipt"),
+    ):
         _regular(path, label)
     receipt_value = _read_json(p3_receipt, "P3 receipt")
+    if not isinstance(receipt_value, dict):
+        raise PipelineError("P3 receipt must be a JSON object")
     if receipt_value.get("schema_version") != "qairt-windows-host-probe-v1" or receipt_value.get("profile") != "QAIRT-2.49.0.260730-windows-x86_64":
         raise PipelineError("P3 receipt profile mismatch")
-    if receipt_value.get("sdk", {}).get("version") != profile.version or receipt_value.get("sdk", {}).get("build_id") != profile.build_id:
+    receipt_sdk = receipt_value.get("sdk")
+    if not isinstance(receipt_sdk, dict):
+        raise PipelineError("P3 receipt SDK must be a JSON object")
+    if receipt_sdk.get("version") != profile.version or receipt_sdk.get("build_id") != profile.build_id:
         raise PipelineError("P3 receipt SDK version/build mismatch")
-    sdk_files: dict[str, dict[str, object]] = {}
-    selected_files = {entry.get("path"): entry for entry in receipt_value.get("selected_files", []) if isinstance(entry, dict)}
-    for relative, (expected_size, expected_hash) in profile.files.items():
-        path = sdk / Path(relative)
-        _regular(path, f"SDK file {relative}")
-        if path.stat().st_size != expected_size or _sha256(path) != expected_hash:
-            raise PipelineError(f"SDK file hash/size mismatch: {relative}")
-        sdk_files[relative] = _file_record(path, sdk)
-        if relative != "lib/x86_64-windows-msvc/QnnModelDlc.dll" and relative not in selected_files:
-            raise PipelineError(f"P3 receipt is missing selected file: {relative}")
-        if relative in selected_files and (
-            selected_files[relative].get("bytes") != expected_size
-            or selected_files[relative].get("sha256") != expected_hash
-        ):
-            raise PipelineError(f"P3 receipt selected-file mismatch: {relative}")
+    receipt_archive = receipt_value.get("archive")
+    if not isinstance(receipt_archive, dict):
+        raise PipelineError("P3 receipt archive must be a JSON object")
+    runtime_receipt = receipt_archive.get("runtime_snapshot")
+    if not isinstance(runtime_receipt, dict):
+        raise PipelineError("P3 receipt runtime snapshot must be a JSON object")
+    if (
+        receipt_archive.get("bytes") != profile.archive_size
+        or receipt_archive.get("sha256") != profile.archive_sha256
+        or receipt_archive.get("archive_root") != profile.archive_root
+        or runtime_receipt.get("file_count") != profile.runtime_file_count
+        or runtime_receipt.get("uncompressed_bytes") != profile.runtime_uncompressed_bytes
+    ):
+        raise PipelineError("P3 receipt archive/runtime snapshot mismatch")
     if _sha256(model) != profile.model_sha256:
         raise PipelineError("P5 model hash mismatch")
 
-    work.mkdir()
-    work_identity = (os.stat(work, follow_symlinks=False).st_dev, os.stat(work, follow_symlinks=False).st_ino)
-    (work / "logs").mkdir()
-    export = work / "reference_export"
-    cpu = work / "cpu_outputs"
-    cpu.mkdir()
-    env = _sdk_environment(sdk, qairt_python)
-    roots = {"<sdk>": sdk, "<work>": work, "<qairt-python>": qairt_python, "<reference-python>": reference_python, "<model>": model}
-    stages: list[dict[str, object]] = []
-    reference_script = Path(__file__).resolve().parents[1] / "reference" / "small_graph.py"
-    converter = sdk / "bin/x86_64-windows-msvc/qairt-converter"
-    quantizer = sdk / "bin/x86_64-windows-msvc/qairt-quantizer"
-    dlc_info = sdk / "bin/x86_64-windows-msvc/qairt-dlc-info"
-    net_run = sdk / "bin/x86_64-windows-msvc/qnn-net-run.exe"
-    float_dlc = work / "small_graph.float.dlc"
-    quant_dlc = work / "small_graph.w8a8.dlc"
-    csv_path = work / "small_graph.metadata.csv"
+    receipt_selected = receipt_value.get("selected_files")
+    if not isinstance(receipt_selected, list):
+        raise PipelineError("P3 receipt selected files must be a JSON array")
+    selected_files = {
+        entry.get("path"): entry for entry in receipt_selected
+        if isinstance(entry, dict)
+    }
     try:
-        stages.append(_run_stage("reference_export", [str(reference_python), str(reference_script), "export", "--model", str(model), "--output", str(export)], _reference_environment(reference_python), work, roots, runner))
-        stages.append(_run_stage("converter", [str(qairt_python), str(converter), "--input_network", str(model), "--output_path", str(float_dlc), "--target_backend", "HTP", "--source_model_input_shape", INPUT_NAME, "1,1,4,4", "--source_model_input_layout", INPUT_NAME, "NCHW", "--desired_input_layout", INPUT_NAME, "NCHW", "--source_model_output_layout", OUTPUT_NAME, "NCHW", "--desired_output_layout", OUTPUT_NAME, "NCHW"], env, work, roots, runner))
-        stages.append(_run_stage("quantizer", [str(qairt_python), str(quantizer), "--input_dlc", str(float_dlc), "--output_dlc", str(quant_dlc), "--input_list", str(export / "input_list.txt"), "--act_bitwidth", "8", "--weights_bitwidth", "8", "--bias_bitwidth", "32", "--target_backend", "HTP", "--dump_encoding_json"], env, work, roots, runner))
+        sdk = Path(tempfile.mkdtemp(prefix="qairt-p6-sdk-"))
+    except OSError as exc:
+        raise PipelineError(f"cannot create private SDK snapshot: {exc}") from exc
+    snapshot_owned = True
+    try:
+        try:
+            archive_hash, _, sdk_yaml = _archive_runtime(archive, sdk, profile)
+        except ProbeError as exc:
+            raise PipelineError(f"fixed QAIRT archive rejected: {exc}") from exc
+        (sdk / "sdk.yaml").write_bytes(sdk_yaml)
+        manifest = _snapshot_manifest(sdk)
+        if len(manifest) != profile.runtime_file_count + 1:
+            raise PipelineError("SDK snapshot manifest count mismatch")
+        sdk_files: dict[str, dict[str, object]] = {}
+        for relative, (expected_size, expected_hash) in profile.files.items():
+            actual = manifest.get(relative)
+            if actual != (expected_size, expected_hash):
+                raise PipelineError(f"SDK snapshot file hash/size mismatch: {relative}")
+            sdk_files[relative] = _file_record(sdk / Path(relative), sdk)
+            if relative != "lib/x86_64-windows-msvc/QnnModelDlc.dll" and relative not in selected_files:
+                raise PipelineError(f"P3 receipt is missing selected file: {relative}")
+            if relative in selected_files and (
+                selected_files[relative].get("bytes") != expected_size
+                or selected_files[relative].get("sha256") != expected_hash
+            ):
+                raise PipelineError(f"P3 receipt selected-file mismatch: {relative}")
+        _verify_snapshot(sdk, manifest)
+
+        work.mkdir()
+        work_stat = os.stat(work, follow_symlinks=False)
+        work_identity = (work_stat.st_dev, work_stat.st_ino)
+        (work / "logs").mkdir()
+        export = work / "reference_export"
+        cpu = work / "cpu_outputs"
+        cpu.mkdir()
+        env = _sdk_environment(sdk, qairt_python)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["PYTHONNOUSERSITE"] = "1"
+        roots = {
+            "<sdk>": sdk, "<work>": work, "<qairt-python>": qairt_python,
+            "<reference-python>": reference_python, "<model>": model,
+        }
+        stages: list[dict[str, object]] = []
+        reference_script = Path(__file__).resolve().parents[1] / "reference" / "small_graph.py"
+        converter = sdk / "bin/x86_64-windows-msvc/qairt-converter"
+        quantizer = sdk / "bin/x86_64-windows-msvc/qairt-quantizer"
+        dlc_info = sdk / "bin/x86_64-windows-msvc/qairt-dlc-info"
+        net_run = sdk / "bin/x86_64-windows-msvc/qnn-net-run.exe"
+        float_dlc = work / "small_graph.float.dlc"
+        quant_dlc = work / "small_graph.w8a8.dlc"
+        csv_path = work / "small_graph.metadata.csv"
+
+        stages.append(_run_stage(
+            "reference_export",
+            [str(reference_python), str(reference_script), "export", "--model", str(model), "--output", str(export)],
+            _reference_environment(reference_python), work, roots, runner,
+        ))
+        stages.append(_run_sdk_stage(
+            "import_origin", [str(qairt_python), "-s", "-c", IMPORT_PROBE],
+            env, work, roots, runner, sdk, manifest,
+        ))
+        import_origins = _import_origins(work / "logs" / "import_origin.stdout.log", sdk, manifest)
+        stages.append(_run_sdk_stage(
+            "converter",
+            [str(qairt_python), str(converter), "--input_network", str(model), "--output_path", str(float_dlc), "--target_backend", "HTP", "--source_model_input_shape", INPUT_NAME, "1,1,4,4", "--source_model_input_layout", INPUT_NAME, "NCHW", "--desired_input_layout", INPUT_NAME, "NCHW", "--source_model_output_layout", OUTPUT_NAME, "NCHW", "--desired_output_layout", OUTPUT_NAME, "NCHW"],
+            env, work, roots, runner, sdk, manifest,
+        ))
+        stages.append(_run_sdk_stage(
+            "quantizer",
+            [str(qairt_python), str(quantizer), "--input_dlc", str(float_dlc), "--output_dlc", str(quant_dlc), "--input_list", str(export / "input_list.txt"), "--act_bitwidth", "8", "--weights_bitwidth", "8", "--bias_bitwidth", "32", "--target_backend", "HTP", "--dump_encoding_json"],
+            env, work, roots, runner, sdk, manifest,
+        ))
         encoding_json = _find_one(work, ("*encoding*.json", "*encodings*.json"), "encoding JSON")
-        stages.append(_run_stage("dlc_info", [str(qairt_python), str(dlc_info), "--input_dlc", str(quant_dlc), "--display_all_encodings", "--save", str(csv_path)], env, work, roots, runner))
+        stages.append(_run_sdk_stage(
+            "dlc_info",
+            [str(qairt_python), str(dlc_info), "--input_dlc", str(quant_dlc), "--display_all_encodings", "--save", str(csv_path)],
+            env, work, roots, runner, sdk, manifest,
+        ))
         metadata = validate_metadata(encoding_json, csv_path)
-        stages.append(_run_stage("qnn_cpu", [str(net_run), "--backend", str(sdk / "lib/x86_64-windows-msvc/QnnCpu.dll"), "--model", str(sdk / "lib/x86_64-windows-msvc/QnnModelDlc.dll"), "--dlc_path", str(quant_dlc), "--input_list", str(export / "input_list.txt"), "--output_dir", str(cpu)], env, work, roots, runner))
+        stages.append(_run_sdk_stage(
+            "qnn_cpu",
+            [str(net_run), "--backend", str(sdk / "lib/x86_64-windows-msvc/QnnCpu.dll"), "--model", str(sdk / "lib/x86_64-windows-msvc/QnnModelDlc.dll"), "--dlc_path", str(quant_dlc), "--input_list", str(export / "input_list.txt"), "--output_dir", str(cpu)],
+            env, work, roots, runner, sdk, manifest,
+        ))
         comparisons = _compare_cpu(export, cpu)
-        bound_files = {str(path.relative_to(work)): _file_record(path, work) for path in sorted(work.rglob("*")) if path.is_file()}
+        _verify_snapshot(sdk, manifest)
+        bound_files = {
+            str(path.relative_to(work)): _file_record(path, work)
+            for path in sorted(work.rglob("*")) if path.is_file()
+        }
         receipt: dict[str, object] = {
             "schema_version": SCHEMA_VERSION,
             "result": "passed",
             "backend": "QNN_CPU",
-            "sdk": {"product": "QAIRT", "version": profile.version, "build_id": profile.build_id, "root": str(sdk), "files": sdk_files},
-            "inputs": {"model": _file_record(model), "p3_receipt": _file_record(p3_receipt), "qairt_python": _file_record(qairt_python), "reference_python": _file_record(reference_python), "pipeline_script": _file_record(Path(__file__).resolve()), "reference_script": _file_record(reference_script)},
+            "sdk": {
+                "product": "QAIRT", "version": profile.version,
+                "build_id": profile.build_id,
+                "execution_source": "fixed_private_archive_snapshot",
+                "archive": _file_record(archive),
+                "archive_sha256": archive_hash,
+                "closure": {
+                    "file_count": len(manifest),
+                    "bytes": sum(size for size, _ in manifest.values()),
+                    "manifest_sha256": _manifest_digest(manifest),
+                    "subtrees": ["bin/x86_64-windows-msvc", "lib/x86_64-windows-msvc", "lib/python"],
+                },
+                "import_origins": import_origins,
+                "files": sdk_files,
+            },
+            "inputs": {
+                "model": _file_record(model), "p3_receipt": _file_record(p3_receipt),
+                "qairt_python": _file_record(qairt_python),
+                "reference_python": _file_record(reference_python),
+                "pipeline_script": _file_record(Path(__file__).resolve()),
+                "reference_script": _file_record(reference_script),
+            },
             "quantization": {"target_backend": "HTP", "weights_bitwidth": 8, "activations_bitwidth": 8, "bias_bitwidth": 32, "metadata": metadata},
             "tolerance": {"absolute": ATOL, "relative": RTOL},
             "cases": comparisons,
             "stages": stages,
             "artifacts": bound_files,
             "not_run": {"device": "not_run", "htp_execution": "not_run", "fsr": "not_run", "game": "not_run"},
-            "scope": "synthetic small graph on Windows QNN CPU; not FSR, HTP, device, or game validation",
+            "scope": "synthetic small graph on Windows QNN CPU from a fixed private SDK snapshot; not FSR, HTP, device, or game validation",
         }
         current_output_parent = os.stat(output.parent, follow_symlinks=False)
         current_work = os.stat(work, follow_symlinks=False)
@@ -549,15 +768,15 @@ def run_pipeline(
             raise PipelineError("output parent identity changed during pipeline")
         if _is_reparse(current_work) or (current_work.st_dev, current_work.st_ino) != work_identity:
             raise PipelineError("work root identity changed during pipeline")
+        _remove_snapshot(sdk)
+        snapshot_owned = False
         staging: Path | None = None
         try:
-            staging = Path(
-                tempfile.mkdtemp(
-                    prefix=f".{output.name}.publishing-", dir=output.parent
-                )
-            )
+            staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.publishing-", dir=output.parent))
             shutil.copytree(work, staging, dirs_exist_ok=True)
-            (staging / "success_receipt.json").write_bytes((json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+            (staging / "success_receipt.json").write_bytes(
+                (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8")
+            )
             os.replace(staging, output)
         except Exception:
             if staging is not None:
@@ -568,11 +787,14 @@ def run_pipeline(
         raise
     except Exception as exc:
         raise PipelineError(str(exc)) from exc
+    finally:
+        if snapshot_owned:
+            shutil.rmtree(sdk, ignore_errors=True)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sdk-root", type=Path, required=True)
+    parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--qairt-python", type=Path, required=True)
     parser.add_argument("--reference-python", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
@@ -581,7 +803,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--p3-receipt", type=Path, required=True)
     arguments = parser.parse_args(argv)
     try:
-        receipt = run_pipeline(arguments.sdk_root, arguments.qairt_python, arguments.reference_python, arguments.model, arguments.work_root, arguments.output_root, arguments.p3_receipt)
+        receipt = run_pipeline(arguments.archive, arguments.qairt_python, arguments.reference_python, arguments.model, arguments.work_root, arguments.output_root, arguments.p3_receipt)
     except PipelineError as exc:
         print(f"QAIRT small-graph pipeline failed: {exc}", file=sys.stderr)
         return 1

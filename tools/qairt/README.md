@@ -76,14 +76,14 @@ environment receipts.
 
 ## P6 small-graph W8A8 pipeline
 
-`small_graph_pipeline.py` consumes only explicit SDK, interpreter, model,
-work, output, and P3-receipt paths. The work and output roots must not already
+`small_graph_pipeline.py` consumes only explicit fixed SDK archive, interpreter,
+model, work, output, and P3-receipt paths. The work and output roots must not already
 exist; the work path must contain no whitespace because its absolute raw paths
 are written into the QAIRT calibration list. For example:
 
 ```powershell
 & .\local\venvs\qairt-2.49.0.260730\Scripts\python.exe tools/qairt/small_graph_pipeline.py `
-  --sdk-root sdks/qairt/2.49.0.260730 `
+  --archive downloads/qairt-community-2.49.0.260730.zip `
   --qairt-python local/venvs/qairt-2.49.0.260730/Scripts/python.exe `
   --reference-python local/venvs/reference/Scripts/python.exe `
   --model tools/reference/fixtures/conv_add_relu.onnx `
@@ -100,6 +100,15 @@ comparison. Failures preserve the work directory and logs but do not publish a
 success output. HTP execution, device, FSR, and game validation remain
 `not_run`.
 
+Every run verifies the fixed official archive and extracts its 2,698 Windows
+runtime files plus `sdk.yaml` into a private temporary snapshot. The three
+Python entry points, `PYTHONPATH`, native `PATH`, QNN runner, CPU backend, and
+DLC model library all use only that snapshot. A preflight imports the fixed
+converter, quantizer, and DLC-info module roots and rejects any `qti.*` origin
+outside the snapshot. Before and after every SDK stage, the pipeline rechecks
+the entire 2,699-file manifest; additions, removals, or replacements abort the
+run. The temporary snapshot is removed after success or failure.
+
 The two parent directories must already exist; both selected roots must be new,
 and the absolute work path must contain no whitespace. The pipeline does not
 install the QAIRT or reference dependencies, so both explicit interpreters must
@@ -114,10 +123,9 @@ symmetry accepts a JSON boolean or the fixed SDK's exact lowercase `"true"` /
 `"false"` strings. Other representations are rejected. Unique work roots
 remain mandatory.
 
-The P6 success receipt hashes the selected interpreter executables, scripts,
-inputs, logs, and outputs, but it does not bind the complete installed Python
-package closure or every expanded SDK dependency. P3's probe executes an
-archive-derived private snapshot; P6 instead invokes tools and libraries from
-the explicitly selected expanded SDK root. Do not infer that a P3 snapshot
-receipt alone reproduces P6. Closing that environment/receipt binding is still
-an R-series hardening task.
+The P6 success receipt records the fixed archive, conservative runtime closure
+manifest digest, representative `qti.*` import origins, selected interpreter
+executables, scripts, inputs, logs, and outputs. The closure is an upper bound;
+it does not claim that every file was loaded, identify Windows system-DLL
+resolution, or bind the complete installed Python package environment. The
+interpreter/package/P3 receipt binding remains R06c.
