@@ -10,8 +10,10 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import sys
+import tempfile
 from datetime import datetime, timezone
 from importlib import metadata
 from typing import Any, Iterable
@@ -414,6 +416,11 @@ def _profile_bytes(profile: dict[str, Any]) -> bytes:
     return (json.dumps(profile, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def _write_new_file(path: Path, payload: bytes) -> None:
+    with path.open("xb") as stream:
+        stream.write(payload)
+
+
 def _redact_evidence_payload(
     source_path: Path,
     payload: bytes,
@@ -444,8 +451,30 @@ def _utc_now() -> str:
 
 
 def redact_profile(private_path: Path, output_path: Path) -> None:
-    if output_path.exists():
-        raise InputError(f"refusing to overwrite existing output: {output_path}")
+    private_path = Path(os.path.abspath(os.fspath(private_path)))
+    output_path = Path(os.path.abspath(os.fspath(output_path)))
+    publication_root = output_path.parent
+    if os.path.lexists(publication_root):
+        raise InputError(
+            f"refusing to overwrite existing output directory: {publication_root}"
+        )
+    try:
+        publication_parent = publication_root.parent
+        publication_parent_stat = publication_parent.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise InputError(
+            f"public output parent does not exist or cannot be inspected: "
+            f"{publication_root.parent}"
+        ) from exc
+    if (
+        stat.S_ISLNK(publication_parent_stat.st_mode)
+        or bool(
+            getattr(publication_parent_stat, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        )
+        or not stat.S_ISDIR(publication_parent_stat.st_mode)
+    ):
+        raise InputError(f"public output parent is not a directory: {publication_parent}")
     private_directory = private_path.parent.resolve(strict=True)
     private_directory_stat = private_directory.stat(follow_symlinks=False)
     private_directory_identity = (
@@ -471,7 +500,7 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
     for index, candidate in enumerate(public["game_candidates"], start=1):
         candidate["candidate_id"] = f"public-candidate-{index:04d}"
 
-    published: list[tuple[dict[str, Any], bytes, Path]] = []
+    published: list[tuple[dict[str, Any], bytes, PurePosixPath]] = []
     public_id_by_private_id: dict[str, str] = {}
     for index, item in enumerate(private["evidence"], start=1):
         source_path = private_path.parent.joinpath(*PurePosixPath(item["path"]).parts)
@@ -487,9 +516,6 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
         public_id = f"public-evidence-{index:04d}-{digest[:16]}"
         suffix = source_path.suffix.lower()
         relative = f"evidence/{public_id}{suffix}"
-        destination = output_path.parent.joinpath(*PurePosixPath(relative).parts)
-        if destination.exists():
-            raise InputError(f"refusing to overwrite existing public evidence: {destination}")
         public_item = copy.deepcopy(item)
         public_item.update(
             evidence_id=public_id,
@@ -499,7 +525,7 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
             byte_count=len(redacted_payload),
             visibility="public",
         )
-        published.append((public_item, redacted_payload, destination))
+        published.append((public_item, redacted_payload, PurePosixPath(relative)))
         public_id_by_private_id[item["evidence_id"]] = public_id
 
     public["evidence"] = [item for item, _, _ in published]
@@ -512,25 +538,41 @@ def redact_profile(private_path: Path, output_path: Path) -> None:
 
     # Validate structure and relationships before creating any public artifact.
     validate_profile(public, output_path, verify_files=False)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_root = output_path.parent.resolve(strict=True)
+    staging_root: Path | None = None
     try:
-        for _, payload, destination in published:
+        staging_root = Path(
+            tempfile.mkdtemp(
+                prefix=f".{publication_root.name}.redacting-",
+                dir=publication_parent,
+            )
+        )
+        staged_output = staging_root / output_path.name
+        for _, payload, relative in published:
+            destination = staging_root.joinpath(*relative.parts)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            resolved_parent = destination.parent.resolve(strict=True)
-            if resolved_parent != output_root and output_root not in resolved_parent.parents:
-                raise InputError(f"public evidence destination escapes output directory: {destination}")
-            resolved_destination = destination.resolve(strict=False)
-            if resolved_destination.parent != resolved_parent:
-                raise InputError(f"public evidence destination escapes output directory: {destination}")
-            with destination.open("xb") as stream:
-                stream.write(payload)
-        with output_path.open("xb") as stream:
-            stream.write(_profile_bytes(public))
+            _write_new_file(destination, payload)
+        _write_new_file(staged_output, _profile_bytes(public))
+        staged_public = _load_json(staged_output, label="staged public profile")
+        if staged_public != public:
+            raise ProfileInvalid("staged public profile differs from the validated profile")
+        validate_profile(staged_public, staged_output)
+        os.rename(staging_root, publication_root)
     except FileExistsError as exc:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
         raise InputError(f"refusing to overwrite existing output: {exc.filename}") from exc
+    except (InputError, ProfileInvalid, FatalError):
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
+        raise
     except OSError as exc:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
         raise FatalError(f"cannot write public artifacts: {exc}") from exc
+    except Exception:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
+        raise
 
 
 def _parser() -> argparse.ArgumentParser:

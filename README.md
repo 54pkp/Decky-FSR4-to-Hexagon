@@ -40,7 +40,7 @@ $python = 'C:\Path With Spaces\Python312\python.exe'
 ## 当前操作警示
 
 - P5创建竞争、P6发布竞争和encoding的bitwidth/symmetry严格解析已由R01–R03修复并有确定性回归；每次P6运行仍必须使用独立work目录。
-- M0 evidence的检查后路径替换已由R04绑定到实际打开对象；脱敏失败仍可能遗留半成品，待R05关闭。不要把失败输出当作可发布档案。
+- M0 evidence读取和公开脱敏整体发布已由R04/R05加固：输入绑定实际打开对象，失败不会暴露半成品bundle。该结论仅限Windows主机工具。
 - 所有会写产物的命令都应使用新路径；完成后按 receipt 重新核对输入/输出 SHA-256。设备、游戏、性能和画质结论必须保持 `not_run`。
 
 ## 上游与许可边界

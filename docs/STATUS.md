@@ -21,11 +21,11 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 活动任务与状态规则
 
-下一批：**R05——将M0公开脱敏发布改为整体事务并增加失败回滚回归。**
+下一批：**R06a——固化QAIRT/P6前端环境的可校验重建配方。**
 
 | 队列 | 当前实现状态 | 选择条件 |
 | --- | --- | --- |
-| R：审计修复、可复现性与回归 | R01–R04 `complete`；其余叶子项 `not_started` | 当前优先；R05起，独立项可按依赖选择 |
+| R：审计修复、可复现性与回归 | R01–R05 `complete`；其余叶子项 `not_started` | 当前优先；R06a起，独立项可按依赖选择 |
 | F：真实FSR CPU/ONNX/QAIRT离线 | 所有叶子项 `not_started` | 满足所选批次R修复及资产/参考依赖后选取 |
 | E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
 | D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
@@ -38,6 +38,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 | R02 | `complete` | [P6私有发布staging](validation/host/2026-09-22-r02-p6-private-publishing.md)；仅为Windows host_test |
 | R03 | `complete` | [P6 encoding严格解析](validation/host/2026-09-22-r03-p6-strict-encoding.md)；仅为Windows host_test |
 | R04 | `complete` | [M0 evidence打开对象绑定](validation/host/2026-09-22-r04-m0-evidence-open-binding.md)；仅为Windows host_test |
+| R05 | `complete` | [M0公开脱敏整体事务](validation/host/2026-09-22-r05-m0-redaction-transaction.md)；仅为Windows host_test |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -45,7 +46,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 - P5的check→mkdir创建竞争和P6正常双发布者竞争已由R01/R02关闭；创建成功后遭敌对路径替换的更强场景不在这两批证明范围。
 - P6的小数/错误类型bitwidth和非法布尔metadata已由R03改为fail-closed；固定SDK小写字符串及原生布尔保留回归。
-- M0 evidence路径检查/open竞争已由R04关闭；公开输出中途失败残留仍待R05。
+- M0 evidence路径检查/open竞争及公开输出中途失败残留已由R04/R05关闭；POSIX和设备侧仍未验证。
 - P6执行依赖快照/环境收据绑定不足；P7/P8来源信任与环境收据、旧artifact索引需加固。
 - P7/P9部分历史附加检查未固化；Windows symlink固定skip理由陈旧；多venv聚合检查尚未实现。
 - P3后代管道超时、P4 POSIX发布竞态及Linux特有行为仍需对应批次核查。
@@ -64,7 +65,7 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
 
-最近记录：[R04 M0 evidence打开对象绑定](validation/host/2026-09-22-r04-m0-evidence-open-binding.md)；前一批：[R03 P6 encoding严格解析](validation/host/2026-09-22-r03-p6-strict-encoding.md)。
+最近记录：[R05 M0公开脱敏整体事务](validation/host/2026-09-22-r05-m0-redaction-transaction.md)；前一批：[R04 M0 evidence打开对象绑定](validation/host/2026-09-22-r04-m0-evidence-open-binding.md)。
 
 ## 最终里程碑
 

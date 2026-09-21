@@ -621,6 +621,111 @@ class ProfileToolsTests(unittest.TestCase):
             with self.assertRaises(profile_tools.InputError):
                 profile_tools.redact_profile(private_path, output)
 
+    def test_redaction_write_failure_leaves_no_public_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            output = root / "public" / "public.json"
+            real_write = profile_tools._write_new_file
+            calls = 0
+
+            def fail_second_write(path, payload):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected second write failure")
+                return real_write(path, payload)
+
+            with mock.patch.object(
+                profile_tools, "_write_new_file", side_effect=fail_second_write
+            ):
+                with self.assertRaisesRegex(
+                    profile_tools.FatalError, "injected second write failure"
+                ):
+                    profile_tools.redact_profile(private_path, output)
+
+            self.assertEqual(2, calls)
+            self.assertFalse(output.parent.exists())
+            self.assertEqual([], list(root.glob(".public.redacting-*")))
+
+    def test_redaction_validates_staged_files_before_publish(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            output = root / "public" / "public.json"
+            real_validate = profile_tools.validate_profile
+
+            def corrupt_before_staged_validation(
+                profile, profile_path, schema_path=profile_tools.DEFAULT_SCHEMA,
+                *, verify_files=True,
+            ):
+                if verify_files and ".public.redacting-" in profile_path.parent.name:
+                    evidence_path = profile_path.parent.joinpath(
+                        *PurePosixPath(profile["evidence"][0]["path"]).parts
+                    )
+                    evidence_path.write_bytes(b"tampered staged evidence")
+                return real_validate(
+                    profile, profile_path, schema_path, verify_files=verify_files
+                )
+
+            with mock.patch.object(
+                profile_tools,
+                "validate_profile",
+                side_effect=corrupt_before_staged_validation,
+            ):
+                with self.assertRaises(profile_tools.ProfileInvalid):
+                    profile_tools.redact_profile(private_path, output)
+
+            self.assertFalse(output.parent.exists())
+            self.assertEqual([], list(root.glob(".public.redacting-*")))
+
+    def test_redaction_rejects_corrupt_staged_profile_before_publish(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            output = root / "public" / "public.json"
+            real_write = profile_tools._write_new_file
+
+            def corrupt_profile_write(path, payload):
+                if path.name == output.name:
+                    return real_write(path, b"not-json")
+                return real_write(path, payload)
+
+            with mock.patch.object(
+                profile_tools, "_write_new_file", side_effect=corrupt_profile_write
+            ):
+                with self.assertRaisesRegex(
+                    profile_tools.ProfileInvalid,
+                    "staged public profile is not valid JSON",
+                ):
+                    profile_tools.redact_profile(private_path, output)
+
+            self.assertFalse(output.parent.exists())
+            self.assertEqual([], list(root.glob(".public.redacting-*")))
+
+    def test_redaction_publish_loser_preserves_competing_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_path = self._redaction_input(root)
+            output = root / "public" / "public.json"
+            sentinel = output.parent / "winner.txt"
+
+            def competing_publish(source, destination):
+                self.assertEqual(output.parent, Path(destination))
+                output.parent.mkdir()
+                sentinel.write_text("keep", encoding="utf-8")
+                raise FileExistsError(17, "competing publisher won", destination)
+
+            with mock.patch.object(
+                profile_tools.os, "rename", side_effect=competing_publish
+            ):
+                with self.assertRaises(profile_tools.InputError):
+                    profile_tools.redact_profile(private_path, output)
+
+            self.assertEqual("keep", sentinel.read_text(encoding="utf-8"))
+            self.assertFalse(output.exists())
+            self.assertEqual([], list(root.glob(".public.redacting-*")))
+
     def test_redact_cli_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
