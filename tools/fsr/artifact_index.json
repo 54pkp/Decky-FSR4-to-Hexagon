@@ -1,0 +1,75 @@
+{
+  "schema_version": "fsr-artifact-index-v1",
+  "artifacts": [
+    {
+      "artifact_id": "p7-r10a-20260922",
+      "kind": "p7-receipt",
+      "classification": "accepted-current",
+      "receipt_schema": "p7-fsr-intake-receipt-v2",
+      "receipt_sha256": "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b",
+      "p7_receipt_sha256": null,
+      "max_int8_lsb_difference": null,
+      "note": "R10a accepted P7 receipt; the ignored local artifact is selected only by this digest and its validated receipt bindings."
+    },
+    {
+      "artifact_id": "p7-pre-r10a-v1",
+      "kind": "p7-receipt",
+      "classification": "historical-stale",
+      "receipt_schema": "p7-fsr-intake-receipt-v1",
+      "receipt_sha256": "81e45f3d547ba3d8de6cd787ef6ea925ef11cb662df6f6e67c7a60d609d05964",
+      "p7_receipt_sha256": null,
+      "max_int8_lsb_difference": null,
+      "note": "Historical P7 receipt predating the R10a Python, NumPy, argv, and stdout bindings."
+    },
+    {
+      "artifact_id": "p7-audit-validated-v1",
+      "kind": "p7-receipt",
+      "classification": "audit-temporary",
+      "receipt_schema": "p7-fsr-intake-receipt-v1",
+      "receipt_sha256": "eea957ef603555f976ba94d6e3ea34ab8a44b3c4e78889e437f41f84890211d6",
+      "p7_receipt_sha256": null,
+      "max_int8_lsb_difference": null,
+      "note": "Audit-only intermediate validated receipt; never accepted as current evidence."
+    },
+    {
+      "artifact_id": "p7-audit-wrapper-v1",
+      "kind": "p7-receipt",
+      "classification": "audit-temporary",
+      "receipt_schema": "p7-fsr-intake-receipt-v1",
+      "receipt_sha256": "fdef109879cca9193749abe643819974457088cabef7b7106adfc7748672f4d3",
+      "p7_receipt_sha256": null,
+      "max_int8_lsb_difference": null,
+      "note": "Audit-only wrapper receipt; never accepted as current evidence."
+    },
+    {
+      "artifact_id": "p8-r10b-20260922",
+      "kind": "p8-receipt",
+      "classification": "accepted-current",
+      "receipt_schema": "p8-fsr-pass0-check-v1",
+      "receipt_sha256": "2a4c3960304dd19a2c00d70bcbe1309fad23b19017638250e15ce2263cbf8ede",
+      "p7_receipt_sha256": "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b",
+      "max_int8_lsb_difference": 0,
+      "note": "R10b accepted NumPy host-CPU pass-0 receipt bound to the accepted R10a P7 receipt."
+    },
+    {
+      "artifact_id": "p8-pre-r10b-zero-lsb",
+      "kind": "p8-receipt",
+      "classification": "historical-stale",
+      "receipt_schema": "p8-fsr-pass0-check-v1",
+      "receipt_sha256": "4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6",
+      "p7_receipt_sha256": "81e45f3d547ba3d8de6cd787ef6ea925ef11cb662df6f6e67c7a60d609d05964",
+      "max_int8_lsb_difference": 0,
+      "note": "Historical zero-LSB P8 receipt that predates the R10b accepted-P7 trust chain."
+    },
+    {
+      "artifact_id": "p8-legacy-one-lsb",
+      "kind": "p8-receipt",
+      "classification": "historical-stale",
+      "receipt_schema": "p8-fsr-pass0-check-v1",
+      "receipt_sha256": "67e80e4f030165995167b974016ef77fd76757bdce6a2164579ffac72f213f33",
+      "p7_receipt_sha256": "81e45f3d547ba3d8de6cd787ef6ea925ef11cb662df6f6e67c7a60d609d05964",
+      "max_int8_lsb_difference": 1,
+      "note": "Legacy one-LSB-tolerance P8 receipt; it is not current zero-LSB evidence."
+    }
+  ]
+}

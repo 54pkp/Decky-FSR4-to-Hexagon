@@ -23,6 +23,7 @@ if os.fspath(REPOSITORY) not in sys.path:
     sys.path.insert(0, os.fspath(REPOSITORY))
 
 from tools.fsr.intake import IntakeError, _check_existing_path, _hash_file
+from tools.fsr.artifact_index import INDEX_PATH, current_artifact, load_artifact_index
 
 
 P7_SOURCE_COMMIT = "c5e34b4b7128ffeb152f80cbdb6d715d577ec289"
@@ -30,7 +31,6 @@ P7_SOURCE_URL = "https://github.com/Rolaand-Jayz/FSR-4.0.2-reference"
 P7_EXTRACTOR_URL = "https://github.com/puzzled-pancake/fsr4-hexagon"
 P7_EXTRACTOR_SHA256 = "73e5533bda45d17f84d2d81315c4152cb912d809a648f63fe06ec2e026f5d31f"
 P7_EXTRACTOR_BYTE_COUNT = 15762
-P7_ACCEPTED_RECEIPT_SHA256 = "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b"
 SIMULATOR_COMMIT = "8c7a972ab70e5693828a856da71ce711232af463"
 SIMULATOR_SHA256 = "e82d407f26d4cd22d7b10d25a5f5d53e236febf98414946ecba32dee1377c0fe"
 SIMULATOR_URL = "https://github.com/puzzled-pancake/fsr4-hexagon"
@@ -40,6 +40,11 @@ P7_RECEIPT_NAME = "intake_receipt.json"
 MAX_RECEIPT_BYTES = 1 << 20
 MAX_ARTIFACT_BYTES = 256 << 20
 MAX_LSB_ERROR = 0
+
+ARTIFACT_INDEX = load_artifact_index(INDEX_PATH)
+CURRENT_P7_ARTIFACT = current_artifact(ARTIFACT_INDEX, "p7-receipt")
+CURRENT_P8_ARTIFACT = current_artifact(ARTIFACT_INDEX, "p8-receipt")
+P7_ACCEPTED_RECEIPT_SHA256 = CURRENT_P7_ARTIFACT["receipt_sha256"]
 
 
 class Pass0CheckError(Exception):

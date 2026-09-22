@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
@@ -10,6 +11,7 @@ import py_compile
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 try:
     import numpy as np
@@ -24,6 +26,8 @@ if os.fspath(REPOSITORY) not in sys.path:
 if np is not None:
     from tools.fsr.pass0_check import (
         GRAPH_NAME,
+        CURRENT_P7_ARTIFACT,
+        CURRENT_P8_ARTIFACT,
         NPZ_NAME,
         P7_RECEIPT_NAME,
         Pass0CheckError,
@@ -157,6 +161,73 @@ class Pass0CheckTests(unittest.TestCase):
         self.assertEqual(receipt["parameters"]["quantization_scale"], float(np.float32(0.025)))
         self.assertEqual(receipt["limitations"]["official_golden"], "not_available")
         self.assertEqual(receipt["p7"]["receipt"]["sha256"], self.contract.accepted_p7_receipt_sha256)
+
+    def test_public_contract_is_selected_from_current_artifact_index_entries(self):
+        from tools.fsr.pass0_check import PUBLIC_CONTRACT
+
+        self.assertEqual("accepted-current", CURRENT_P7_ARTIFACT["classification"])
+        self.assertEqual("accepted-current", CURRENT_P8_ARTIFACT["classification"])
+        self.assertEqual(
+            CURRENT_P7_ARTIFACT["receipt_sha256"],
+            PUBLIC_CONTRACT.accepted_p7_receipt_sha256,
+        )
+        self.assertEqual(
+            CURRENT_P7_ARTIFACT["receipt_sha256"],
+            CURRENT_P8_ARTIFACT["p7_receipt_sha256"],
+        )
+        self.assertEqual(0, CURRENT_P8_ARTIFACT["max_int8_lsb_difference"])
+
+    def test_isolated_import_follows_alternate_valid_index_and_rejects_invalid_index(self):
+        from tools.fsr import artifact_index
+
+        source = json.loads(artifact_index.INDEX_PATH.read_text(encoding="utf-8"))
+
+        def current(value, kind):
+            return next(
+                entry
+                for entry in value["artifacts"]
+                if entry["kind"] == kind and entry["classification"] == "accepted-current"
+            )
+
+        def isolated_import(index_path, module_name):
+            spec = importlib.util.spec_from_file_location(
+                module_name, REPOSITORY / "tools" / "fsr" / "pass0_check.py"
+            )
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            try:
+                with mock.patch.object(artifact_index, "INDEX_PATH", index_path):
+                    spec.loader.exec_module(module)
+            finally:
+                del sys.modules[module_name]
+            return module
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            alternate = copy.deepcopy(source)
+            alternate_p7 = current(alternate, "p7-receipt")
+            alternate_p8 = current(alternate, "p8-receipt")
+            alternate_p7["receipt_sha256"] = "1" * 64
+            alternate_p8["receipt_sha256"] = "2" * 64
+            alternate_p8["p7_receipt_sha256"] = "1" * 64
+            valid_path = root / "valid-index.json"
+            valid_path.write_text(json.dumps(alternate), encoding="utf-8")
+
+            isolated = isolated_import(valid_path, "r13_alternate_pass0_check")
+            self.assertEqual("1" * 64, isolated.PUBLIC_CONTRACT.accepted_p7_receipt_sha256)
+            self.assertEqual("1" * 64, isolated.CURRENT_P7_ARTIFACT["receipt_sha256"])
+            self.assertEqual("2" * 64, isolated.CURRENT_P8_ARTIFACT["receipt_sha256"])
+
+            invalid = copy.deepcopy(source)
+            current(invalid, "p8-receipt")["max_int8_lsb_difference"] = 1
+            invalid_path = root / "invalid-index.json"
+            invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaisesRegex(
+                artifact_index.ArtifactIndexError, "must have zero-LSB tolerance"
+            ):
+                isolated_import(invalid_path, "r13_invalid_pass0_check")
 
     def test_receipt_or_artifact_hash_mismatch_is_rejected(self):
         with self.subTest("receipt"):

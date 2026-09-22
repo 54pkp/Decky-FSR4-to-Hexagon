@@ -37,10 +37,33 @@ atomic final rename. A successful host extraction does not establish official
 FSR4 equivalence, QNN/HTP execution, device behavior, game integration, quality,
 or performance.
 
+## Versioned artifact index
+
+`artifact_index.json` is the source-controlled trust selector for P7/P8
+receipts. `artifact_index.py` loads it with a closed, versioned schema and
+rejects duplicate keys, unknown or missing fields, malformed hashes, ambiguous
+current entries, and a current P8 entry that does not bind the current P7 or
+zero-LSB tolerance. Artifact directories remain ignored local data: their names
+are never evidence and do not appear in the index.
+
+The current P7 receipt is `b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b`;
+the current R10b P8 receipt is `2a4c3960304dd19a2c00d70bcbe1309fad23b19017638250e15ce2263cbf8ede`.
+The earlier zero-LSB P8 receipt
+`4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6`
+is historical/stale because it binds the pre-R10a P7 receipt. The legacy
+one-LSB receipt
+`67e80e4f030165995167b974016ef77fd76757bdce6a2164579ffac72f213f33`
+is also historical/stale and cannot be selected as current zero-LSB evidence.
+Known wrapper/validation intermediates are classified audit-temporary. Any
+unlisted receipt remains untrusted rather than being inferred current from its
+filename.
+
 ## P8 pass-0 host CPU cross-check
 
 `pass0_check.py` consumes an explicit P7 publication directory and the pinned
-upstream `fsr4_sim.py`. Before importing the simulator it verifies the P7
+upstream `fsr4_sim.py`. Its production contract selects P7 from the fixed
+artifact index, then matches the selected directory's receipt by digest; a
+directory name alone cannot select evidence. Before importing the simulator it verifies the P7
 receipt is the accepted R10a v2 receipt with SHA-256
 `b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b`.
 It also verifies that receipt's exact source URL/commit, extractor
@@ -72,7 +95,7 @@ ONNX, QNN/HTP, device, or game result.
 
 The output parent must already exist and every run must use a new `.json` path.
 Do not use or overwrite the local legacy `artifacts/p8-pass0-receipt.json`.
-That file and the previously audited P8 receipt with SHA-256
+That one-LSB file and the previously audited P8 receipt with SHA-256
 `4170b2824a5242b1bdfaac6bb39fbc06e23963e323e568f26bdbc5113a7769b6`
 are historical and invalid for the R10b trust chain because they predate the
 accepted R10a P7 receipt. Generate a new P8 receipt; never trust an artifact
