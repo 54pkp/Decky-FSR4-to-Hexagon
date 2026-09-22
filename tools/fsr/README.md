@@ -159,3 +159,16 @@ the tie.  The pinned simulator adds float32 `0.5` and can round those synthetic
 `nextafter` boundary inputs onto the tie.  Tests preserve this difference
 instead of masking it; all fixed chained and direct F02a fixtures nevertheless
 remain exactly equal to the pinned simulator at zero LSB.
+
+## F02b pass5-9 CPU reference
+
+`cpu_passes_5_9.py` continues the fixed chain through pass9 and has separate
+pass-local inputs for p5-p9.  Its scalar oracle rebuilds every bin-backed
+regular/transpose weight from authenticated `bin_raw__*` bytes using the fixed
+logical layout and strides, checks the published aliases, and uses independent
+nested loops.  The frozen contract records chain and direct hashes at zero LSB.
+Tests cover p5 uniform FNB32, p6 scale halves, p7/p8 group2 isolation, and p9's
+four IOHW transpose phases plus the independent p5 skip.  Mathematical
+half-away rounding and the pinned simulator pre-tie limitation remain as
+documented for F02a.  These simulator-derived CPU checks do not implement
+pass10-13 and do not prove official golden, ONNX, QNN/HTP, device, or game use.
