@@ -322,6 +322,186 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(retained_before, context.retained_resource_count)
         self.assertEqual("executing", context.state)
 
+    def test_concurrent_false_consumption_retries_are_idempotent_and_conflicts_reject(self):
+        context = self.new_context()
+        self.submit(context)
+        context.complete(self.scenario["request"])
+        context.result_consumed(self.scenario["request"], False)
+        history_before = context.committed_history
+        generation_before = context.history_generation
+        errors = []
+        barrier = threading.Barrier(64)
+
+        def retry(success):
+            try:
+                barrier.wait(timeout=5)
+                context.result_consumed(self.scenario["request"], success)
+            except Exception as exc:
+                errors.append((success, exc))
+
+        threads = [
+            threading.Thread(target=retry, args=(index % 2 == 0,))
+            for index in range(64)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), "consumption retry thread exceeded timeout")
+
+        self.assertEqual(32, len(errors))
+        self.assertTrue(all(success is True for success, _ in errors))
+        self.assertTrue(
+            all("conflicts with the recorded notification" in str(exc) for _, exc in errors)
+        )
+        self.assertEqual(1, context.consumed_record_count)
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertEqual(history_before, context.committed_history)
+        self.assertEqual(generation_before, context.history_generation)
+
+    def test_concurrent_reset_retries_return_one_result_and_conflicts_reject(self):
+        context = self.new_context()
+        results = []
+        errors = []
+        barrier = threading.Barrier(64)
+
+        def retry(expected_generation):
+            try:
+                barrier.wait(timeout=5)
+                results.append(context.reset("concurrent-reset", expected_generation))
+            except Exception as exc:
+                errors.append((expected_generation, exc))
+
+        threads = [threading.Thread(target=retry, args=("0",)) for _ in range(64)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), "reset retry thread exceeded timeout")
+        self.assertEqual(["1"] * 64, sorted(results))
+        self.assertEqual([], errors)
+        self.assertEqual("1", context.history_generation)
+        self.assertEqual(1, context.reset_result_count)
+
+        results.clear()
+        errors.clear()
+        barrier = threading.Barrier(64)
+        threads = [
+            threading.Thread(target=retry, args=("0" if index % 2 == 0 else "1",))
+            for index in range(64)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), "reset conflict thread exceeded timeout")
+        self.assertEqual(["1"] * 32, sorted(results))
+        self.assertEqual(32, len(errors))
+        self.assertTrue(all(expected == "1" for expected, _ in errors))
+        self.assertTrue(all("already used with different parameters" in str(exc) for _, exc in errors))
+        self.assertEqual("1", context.history_generation)
+        self.assertEqual(1, context.reset_result_count)
+
+    def test_idempotency_namespaces_remain_independent_through_long_windows(self):
+        context = self.new_context()
+        consumed = []
+        for generation in range(32):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            context.complete(request)
+            success = generation % 2 == 0
+            context.result_consumed(request, success)
+            consumed.append((request, success))
+            self.assertEqual(
+                str(generation + 1),
+                context.reset(f"long-reset-{generation}", str(generation)),
+            )
+
+        self.assertEqual(lifecycle.MAX_CONSUMED_RECORD_COUNT, context.consumed_record_count)
+        self.assertEqual(lifecycle.MAX_RESET_RESULT_COUNT, context.reset_result_count)
+        recent_consumed, recent_success = consumed[-1]
+        context.result_consumed(recent_consumed, recent_success)
+
+        for generation in range(32, 64):
+            self.assertEqual(
+                str(generation + 1),
+                context.reset(f"reset-only-{generation}", str(generation)),
+            )
+        self.assertEqual(lifecycle.MAX_CONSUMED_RECORD_COUNT, context.consumed_record_count)
+        context.result_consumed(recent_consumed, recent_success)
+        self.assertEqual(lifecycle.MAX_RESET_RESULT_COUNT, context.reset_result_count)
+
+        latest_reset_id = "reset-only-63"
+        request = copy.deepcopy(self.scenario["request"])
+        request["history_generation"] = "64"
+        for offset in range(32):
+            request["frame_id"] = str(33 + offset)
+            if offset == 0:
+                self.submit(context, request)
+            else:
+                self.submit_with_committed_history(context, request)
+            context.complete(request)
+            context.result_consumed(request, True)
+            request = copy.deepcopy(request)
+        self.assertEqual(lifecycle.MAX_CONSUMED_RECORD_COUNT, context.consumed_record_count)
+        self.assertEqual(lifecycle.MAX_RESET_RESULT_COUNT, context.reset_result_count)
+        self.assertEqual("64", context.reset(latest_reset_id, "63"))
+
+        with self.assertRaisesRegex(
+            lifecycle.LifecycleInvalid, "outside the retained idempotency window"
+        ):
+            context.result_consumed(consumed[0][0], consumed[0][1])
+        with self.assertRaisesRegex(
+            lifecycle.LifecycleInvalid, "reset.history_generation"
+        ):
+            context.reset("long-reset-0", "0")
+
+    def test_expired_consumption_notification_cannot_release_isolated_resource(self):
+        context = self.new_context()
+        consumed = []
+        for generation in range(lifecycle.MAX_CONSUMED_RECORD_COUNT + 1):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            context.complete(request)
+            context.result_consumed(request, True)
+            consumed.append(request)
+            context.reset(f"expiry-reset-{generation}", str(generation))
+
+        isolated = copy.deepcopy(self.scenario["request"])
+        isolated["frame_id"] = str(len(consumed) + 1)
+        isolated["history_generation"] = str(len(consumed))
+        self.submit(context, isolated)
+        context.complete(isolated)
+        context.reset("isolate-after-expiry", str(len(consumed)))
+        retained_capacity = context.retained_resource_capacity_cells
+
+        self.assert_invalid(
+            lambda: context.result_consumed(consumed[0], True),
+            "outside the retained idempotency window",
+        )
+        self.assertEqual(1, context.isolated_resource_count)
+        self.assertEqual(retained_capacity, context.retained_resource_capacity_cells)
+        context.result_consumed(isolated, True)
+        self.assertEqual(0, context.retained_resource_count)
+
+    def test_fresh_context_does_not_claim_cross_restart_idempotency(self):
+        first = self.new_context()
+        self.submit(first)
+        first.complete(self.scenario["request"])
+        first.result_consumed(self.scenario["request"], False)
+        self.assertEqual("1", first.reset("restart-reset", "0"))
+
+        reconstructed = self.new_context()
+        self.submit(reconstructed)
+        reconstructed.complete(self.scenario["request"])
+        reconstructed.result_consumed(self.scenario["request"], True)
+        self.assertEqual(self.scenario["history"], reconstructed.committed_history)
+        self.assertEqual("1", reconstructed.reset("restart-reset", "0"))
+
     def test_execution_timeout_retains_resources_until_matching_completion(self):
         context = self.new_context()
         self.submit(context)
