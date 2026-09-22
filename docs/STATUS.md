@@ -21,12 +21,12 @@ H1–H4、P1–P8/P9a–c保留 `complete` 的原批次范围；新发现不被�
 
 ## 活动任务与状态规则
 
-R队列已完成。下一批：**F02a——实现并验收pass1–4 CPU参考与独立逐层对照。**
+R队列已完成。下一批：**F02b——实现并验收pass5–9 CPU参考与独立逐层对照。**
 
 | 队列 | 当前实现状态 | 选择条件 |
 | --- | --- | --- |
 | R：审计修复、可复现性与回归 | R01–R13全部 `complete` | 本轮已结束；不重启已完成叶子 |
-| F：真实FSR CPU/ONNX/QAIRT离线 | F01 `complete`；其余叶子项 `not_started` | 当前连续目标；按依赖逐叶推进 |
+| F：真实FSR CPU/ONNX/QAIRT离线 | F01–F02a `complete`；其余叶子项 `not_started` | 当前连续目标；按依赖逐叶推进 |
 | E：协议、自有测试host、部署/观测准备 | 所有叶子项 `not_started` | 后续工程分支；必须有具体可测使用者和工具链 |
 | D：设备、游戏与交付验收 | 所有叶子项 `not_started`；所有设备/游戏gate `not_run` | 待设备及对应依赖/授权；不是自动失败或全部blocked |
 
@@ -55,6 +55,7 @@ R队列已完成。下一批：**F02a——实现并验收pass1–4 CPU参考与
 | R12b | `complete` | [P9c失败/关闭回归固化](validation/host/2026-09-22-r12b-p9c-close-regressions.md)；五态、四代预算及64路竞态，仅为Python线程状态机 |
 | R13 | `complete` | [当前artifact索引](validation/host/2026-09-22-r13-current-artifact-index.md)；固定P7/P8摘要并区分current、historical/stale与audit-temporary |
 | F01 | `complete` | [pass1–13 CPU参考清单](validation/host/2026-09-22-f01-pass-manifest.md)；机器可验合同与固定小输入，独立预期仍为unknown |
+| F02a | `complete` | [pass1–4 CPU参考](validation/host/2026-09-22-f02a-cpu-pass1-4.md)；固定小输入下vector/scalar/认证simulator逐层0 LSB，仅为host CPU |
 
 一次只选一个叶子项；a/b/c分别执行。F/E不是已实施能力，也不默认纳入某次连续目标。设备未接入不阻塞R及依赖已满足的F/E分支；新队列用尽或剩余项确有外部阻塞时再请求最小输入，不能自动扩展范围。
 
@@ -73,7 +74,7 @@ R队列已完成。下一批：**F02a——实现并验收pass1–4 CPU参考与
 
 ## 最近验证快照与环境
 
-原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续批次持续增加回归。F01后当前本机基线为332项、271 pass / 61 skipped；需NumPy的FSR方法在公开基线准确skip，在fsr-extract环境实跑。R08a历史四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠且不含后续新增测试。专用环境结果须单列，不能把skip写成pass。
+原始2026-09-22审计为基线233项、199 pass / 34 skipped；后续批次持续增加回归。F02a后当前本机基线为342项、271 pass / 71 skipped；需NumPy的FSR方法在公开基线准确skip，在fsr-extract环境实跑。R08a历史四venv聚合为399次执行观察（351 pass / 48 skipped），其中存在跨组重叠且不含后续新增测试。专用环境结果须单列，不能把skip写成pass。
 
 - P3真实快照冒烟、P4真实ZIP清单、P7重新提取通过；完整QAIRT ZIP哈希匹配。
 - P5三例误差：0 / 0 / 1.1920928955078125e-07。
@@ -82,7 +83,7 @@ R队列已完成。下一批：**F02a——实现并验收pass1–4 CPU参考与
 
 本机基线、QAIRT、reference、fsr-extract为独立Python3.12.14环境；系统Python3.9保留。QAIRT使用NumPy1.26.4，reference/fsr使用NumPy2.2.6；具体重建/命令见[环境说明](../tools/host/README.md)及工具README。这些是本机核查值，不保证其它机器已有部署。
 
-最近记录：[F01 pass1–13 CPU参考清单](validation/host/2026-09-22-f01-pass-manifest.md)；前一批：[R13当前artifact索引](validation/host/2026-09-22-r13-current-artifact-index.md)。
+最近记录：[F02a pass1–4 CPU参考](validation/host/2026-09-22-f02a-cpu-pass1-4.md)；前一批：[F01 pass1–13 CPU参考清单](validation/host/2026-09-22-f01-pass-manifest.md)。
 
 ## 最终里程碑
 

@@ -297,16 +297,23 @@ def verify_bound_sources(manifest: dict[str, Any], p7_directory: Path, simulator
     _bound_source_payloads(manifest, p7_directory, simulator)
 
 
-def execute_bound_simulator(
+def load_bound_simulator_snapshot(
     manifest: dict[str, Any], p7_directory: Path, simulator: Path
-) -> dict[str, Any]:
-    """Execute exactly the simulator bytes authenticated by the F01 bindings."""
-    payload = _bound_source_payloads(manifest, p7_directory, simulator)["simulator"]
+) -> tuple[dict[str, Any], dict[str, bytes]]:
+    """Authenticate one immutable source snapshot and execute its simulator bytes."""
+    payloads = _bound_source_payloads(manifest, p7_directory, simulator)
     namespace: dict[str, Any] = {
         "__name__": "f01_pinned_simulator",
         "__file__": str(simulator),
         "__package__": None,
     }
-    code = compile(payload, str(simulator), "exec")
+    code = compile(payloads["simulator"], str(simulator), "exec")
     exec(code, namespace)
-    return namespace
+    return namespace, payloads
+
+
+def execute_bound_simulator(
+    manifest: dict[str, Any], p7_directory: Path, simulator: Path
+) -> dict[str, Any]:
+    """Execute exactly the simulator bytes authenticated by the F01 bindings."""
+    return load_bound_simulator_snapshot(manifest, p7_directory, simulator)[0]

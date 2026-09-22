@@ -1,0 +1,87 @@
+{
+  "schema_version": "fsr-cpu-pass1-4-reference-v1",
+  "manifest": {
+    "path": "tools/fsr/pass_manifest.json",
+    "sha256": "419a53b803b5c5d9421714c258898cd3eff416b96d40b190df56eb396b57d1d2"
+  },
+  "implementation": {
+    "path": "tools/fsr/cpu_passes_1_4.py",
+    "sha256": "4d7bcd62310e1644bbf7d05866590646dba2c927c3b4990848f1b79e089f453f",
+    "vector_path": "integer-matmul-and-array-requantization-v1",
+    "oracle_path": "independent-raw-npz-scalar-nested-loops-v1"
+  },
+  "sources": {
+    "p7_receipt_sha256": "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b",
+    "weights_sha256": "9c644d42f421d6dfc2c13479dff84f1017c5457d00a14125796b3562944982fb",
+    "graph_sha256": "8179991469fc0aae5fbc114c7e10f18ffb31555ff25351898b786198e70b2266",
+    "simulator_commit": "8c7a972ab70e5693828a856da71ce711232af463",
+    "simulator_sha256": "e82d407f26d4cd22d7b10d25a5f5d53e236febf98414946ecba32dee1377c0fe"
+  },
+  "fixed_input": {
+    "case_id": "f01-synthetic-8x8-int8-v1",
+    "shape": [8, 8, 16],
+    "dtype": "int8",
+    "sha256": "aff0c596e36cb412883e01693bff831477d5fe2539472ac876d7d912a6806039"
+  },
+  "comparison": {
+    "metric": "maximum-absolute-int8-lsb",
+    "tolerance": 0,
+    "rounding": "half-away-from-zero",
+    "saturation": [-128, 127]
+  },
+  "passes": [
+    {
+      "pass_id": "p1",
+      "input_sha256": "aff0c596e36cb412883e01693bff831477d5fe2539472ac876d7d912a6806039",
+      "output_sha256": "f06fa1879f27823bf9e8c7ffbb4887ad5e6f0b2ef03592f40f13baa5a61a217b",
+      "shape": [8, 8, 16], "dtype": "int8", "minimum": -128, "maximum": 127,
+      "scales": [0.01933070458471775],
+      "direct_input": {
+        "generator": "value[i]=((i*37+11)%255)-127; C-order", "sha256": "aff0c596e36cb412883e01693bff831477d5fe2539472ac876d7d912a6806039",
+        "shape": [8, 8, 16], "dtype": "int8", "scales": [0.014884727075695992],
+        "output_sha256": "f06fa1879f27823bf9e8c7ffbb4887ad5e6f0b2ef03592f40f13baa5a61a217b"
+      }
+    },
+    {
+      "pass_id": "p2",
+      "input_sha256": "f06fa1879f27823bf9e8c7ffbb4887ad5e6f0b2ef03592f40f13baa5a61a217b",
+      "output_sha256": "17fdd33fe9a86d517b8e44043dabae52f129bf9cdef67428210bf9ec5306bc6f",
+      "shape": [8, 8, 16], "dtype": "int8", "minimum": -128, "maximum": 127,
+      "scales": [0.02335178479552269],
+      "direct_input": {
+        "generator": "value[i]=((i*29+7)%255)-127; C-order", "sha256": "cced17c2ae417e9e41a75c7999f10d0b164925031e19c742e07a66a25faf611a",
+        "shape": [8, 8, 16], "dtype": "int8", "scales": [0.01933070458471775],
+        "output_sha256": "b9f2a5c4d4b234b8610d22101f6fee0be859106946d0e04c7c06e077f5a56bd0"
+      }
+    },
+    {
+      "pass_id": "p3",
+      "input_sha256": "17fdd33fe9a86d517b8e44043dabae52f129bf9cdef67428210bf9ec5306bc6f",
+      "output_sha256": "435a882dc65352590018305cf7dfe94072b738dd2df0350601528d98ef618a00",
+      "shape": [4, 4, 32], "dtype": "int8", "minimum": -128, "maximum": 127,
+      "scales": [0.015390855260193348, 0.018884973600506783],
+      "direct_input": {
+        "generator": "value[i]=((i*43+19)%255)-127; C-order", "sha256": "bc096f9ed234d1bcbb996b77c251875f7dd160cd3a96d5ed115ef625395ef369",
+        "shape": [8, 8, 16], "dtype": "int8", "scales": [0.02335178479552269],
+        "output_sha256": "f34c75f69da12acb06fcfdfc5b684ef7b95f0530327c2ae4c35ad3e8bd8e1485"
+      }
+    },
+    {
+      "pass_id": "p4",
+      "input_sha256": "435a882dc65352590018305cf7dfe94072b738dd2df0350601528d98ef618a00",
+      "output_sha256": "09b2b2f61d29c96e9d6968a0e01a66f404a941b19ce583be2fa75a5d213656a5",
+      "shape": [4, 4, 32], "dtype": "int8", "minimum": -128, "maximum": 127,
+      "scales": [0.017191138118505478, 0.021955177187919617],
+      "direct_input": {
+        "generator": "value[i]=((i*53+23)%255)-127; C-order", "sha256": "b6e136bbc36e465f57bff363e2b389881384fae4beb172f8c2eb00728d337a7d",
+        "shape": [4, 4, 32], "dtype": "int8", "scales": [0.015390855260193348, 0.018884973600506783],
+        "output_sha256": "66544c1d637bd3f2e820e5a971d8f85e207d7814dfc79077b463f51c65457449"
+      }
+    }
+  ],
+  "limitations": {
+    "operator_semantics": "derived-from-pinned-simulator-not-official-operator-source",
+    "passes_5_13": "not_implemented",
+    "onnx_qnn_htp_device_game": "not_run"
+  }
+}

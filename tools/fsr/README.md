@@ -128,3 +128,34 @@ referenced `ml2code_runtime` operator implementation. Every pass1–13 independe
 expected source/hash therefore remains `unknown`. F01 does not run or implement
 these passes and proves no numerical equivalence, official golden, QNN/HTP,
 device, game, quality, or performance result.
+
+## F02a pass1-4 CPU reference
+
+`cpu_passes_1_4.py` implements only pass1 through pass4 for the F01 synthetic
+`8x8x16` signed-int8 input.  Its array/matmul path is checked at a predeclared
+zero-LSB tolerance against a separate scalar oracle that reads the authenticated
+NPZ raw keys and uses independent nested convolution and requantization loops.
+`cpu_passes_1_4_contract.json` fixes the F01 manifest and implementation hashes,
+accepted P7/graph/simulator identities, each chained input and output hash, and
+the measured saturation extrema.  The tests also exercise each pass directly
+from its own pass-local formula and frozen input hash (without invoking an
+earlier pass), half-away-from-zero boundaries, signed values,
+clamping, pass3's two output scales, and pass4 partial-convolution padding and
+passthrough concatenation.
+
+Source authentication is snapshot-based: the P7 receipt, NPZ, graph, and
+simulator bytes are read and hashed together; NumPy loads the verified NPZ
+bytes, and the simulator entry is compiled from the verified source bytes with
+`ART` explicitly set to the accepted P7 directory.  No path import or bytecode
+cache is used.  The CPU and scalar paths intentionally share accepted weights,
+graph arguments, and simulator-derived semantics.  This is therefore a useful
+implementation cross-check, but not an independent official operator source,
+official golden, pass5-13 implementation, ONNX result, QNN/HTP result, device
+validation, game validation, quality claim, or performance claim.
+
+The reference's half-away operation widens an already-computed float32 value
+before adding `0.5`, so values immediately below a half-integer remain below
+the tie.  The pinned simulator adds float32 `0.5` and can round those synthetic
+`nextafter` boundary inputs onto the tie.  Tests preserve this difference
+instead of masking it; all fixed chained and direct F02a fixtures nevertheless
+remain exactly equal to the pinned simulator at zero LSB.
