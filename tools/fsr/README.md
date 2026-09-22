@@ -105,3 +105,26 @@ directory name or an old internally consistent receipt.
 the INT8 16-channel network input. The simulator's pass1–13 graph is not invoked
 by this tool. The P7 NPZ/graph are extracted weights and graph description, not
 an ONNX model or a complete executable FSR4 package.
+
+## F01 pass1–13 inventory
+
+`pass_manifest.json` is a versioned, machine-validated inventory rather than an
+implementation. It binds the current P7/P8 receipt digests, P7 weights and graph
+hashes, and pinned simulator commit/content. Each pass records its operator,
+primary and skip topology, fixed HWC tensor shape/dtype, CPU weight aliases and
+shapes, quantization format, graph call arguments, and expected-result status.
+`pass_manifest.py` rejects incomplete, reordered, disconnected, overstated, or
+source-mismatched inventories and can hash-check explicit ignored P7/simulator
+paths without discovering them automatically.
+
+The root fixture is a deterministic signed-int8 `8x8x16` HWC tensor chosen so
+both downscales remain non-empty; it is not a real 1080p frame or game input.
+P7 graph declarations use source logical `W,H,C,N`, while the CPU inventory
+separately names activation `HWC`, regular-weight `OIHW`, and transposed-weight
+`IOHW` layouts. Rounding, saturation, multiply order, and per-call behavior are
+marked simulator-derived; zero point and independent operator-source
+verification remain unknown because the pinned local sources do not include the
+referenced `ml2code_runtime` operator implementation. Every pass1–13 independent
+expected source/hash therefore remains `unknown`. F01 does not run or implement
+these passes and proves no numerical equivalence, official golden, QNN/HTP,
+device, game, quality, or performance result.

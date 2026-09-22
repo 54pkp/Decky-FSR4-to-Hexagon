@@ -1,0 +1,220 @@
+{
+  "schema_version": "fsr-pass1-13-manifest-v1",
+  "sources": {
+    "artifact_index_schema": "fsr-artifact-index-v1",
+    "p7_receipt_sha256": "b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b",
+    "p8_receipt_sha256": "2a4c3960304dd19a2c00d70bcbe1309fad23b19017638250e15ce2263cbf8ede",
+    "weights_sha256": "9c644d42f421d6dfc2c13479dff84f1017c5457d00a14125796b3562944982fb",
+    "weights_byte_count": 216567,
+    "graph_sha256": "8179991469fc0aae5fbc114c7e10f18ffb31555ff25351898b786198e70b2266",
+    "graph_byte_count": 43823,
+    "simulator_url": "https://github.com/puzzled-pancake/fsr4-hexagon",
+    "simulator_commit": "8c7a972ab70e5693828a856da71ce711232af463",
+    "simulator_sha256": "e82d407f26d4cd22d7b10d25a5f5d53e236febf98414946ecba32dee1377c0fe",
+    "simulator_byte_count": 20304
+  },
+  "fixed_input": {
+    "case_id": "f01-synthetic-8x8-int8-v1",
+    "generator": "value[i]=((i*37+11)%255)-127; C-order",
+    "shape": [8, 8, 16],
+    "layout": "HWC",
+    "dtype": "int8",
+    "quantization": "uniform-int8",
+    "scale": 0.014884727075695992,
+    "sha256": "aff0c596e36cb412883e01693bff831477d5fe2539472ac876d7d912a6806039"
+  },
+  "layout_conventions": {
+    "graph_decl_logical": "WHCN",
+    "source_weight_logical": "KH_KW_CIN_COUT",
+    "cpu_activation": "HWC",
+    "cpu_regular_weight": "OIHW",
+    "cpu_transposed_weight": "IOHW",
+    "provenance": "P7 graph declarations use source logical W,H,C,N (weights: KH,KW,Cin,Cout); pinned simulator-derived NumPy arrays use the listed CPU layouts."
+  },
+  "quantization_conventions": {
+    "provenance": "derived-from-pinned-simulator-not-independently-verified-operator-source",
+    "zero_point": "unknown",
+    "rounding": "simulator-derived-half-away-from-zero",
+    "saturation": "simulator-derived-int8-clamp",
+    "multiply_order": "simulator-derived-per-call",
+    "operator_source_verification": "unknown-missing-ml2code-runtime-hlsli"
+  },
+  "passes": [
+    {
+      "pass_id": "p1", "call_index": 0, "operator": "ConvNextBlock",
+      "inputs": [{"name": "primary", "source": "fixed-input", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p1", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"},
+      "weights": [
+        {"key": "encoder2_RB0_conv_dw_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder2_RB0_pw_expand_weight", "shape": [32,16,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder2_RB0_pw_contract_weight", "shape": [16,32,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "uniform-int8", "call_arguments": [19.41786337677181,0.05149897187948227,39.03760807273706,0.025616323575377464]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p2", "call_index": 1, "operator": "ConvNextBlock",
+      "inputs": [{"name": "primary", "source": "p1", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p2", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"},
+      "weights": [
+        {"key": "encoder2_RB1_conv_dw_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder2_RB1_pw_expand_weight", "shape": [32,16,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder2_RB1_pw_contract_weight", "shape": [16,32,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "uniform-int8", "call_arguments": [29.379312231835634,0.03403755649924278,52.675386653772975,0.018984198570251465]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p3", "call_index": 2, "operator": "FusedConv2D_k2s2b_QuantizedOutput",
+      "inputs": [{"name": "primary", "source": "p2", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p3", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [{"key": "enc2_ds_weight", "shape": [32,16,2,2], "layout": "OIHW", "dtype": "int8"}],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.015390855260193348,0.018884973600506783]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p4", "call_index": 3, "operator": "FasterNetBlock<32, 1>",
+      "inputs": [{"name": "primary", "source": "p3", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"}],
+      "output": {"name": "p4", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [
+        {"key": "encoder3_ResidualBlock_0_spatial_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder3_ResidualBlock_0_pw_expand_weight", "shape": [64,32,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder3_ResidualBlock_0_pw_contract_weight", "shape": [32,64,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.015390855260193348,0.018884973600506783,0.014567121863365173,0.017191138118505478,0.021955177187919617]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p5", "call_index": 4, "operator": "FasterNetBlock<32, 1>",
+      "inputs": [{"name": "primary", "source": "p4", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"}],
+      "output": {"name": "p5", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"},
+      "weights": [
+        {"key": "encoder3_ResidualBlock_1_spatial_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder3_ResidualBlock_1_pw_expand_weight", "shape": [64,32,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "encoder3_ResidualBlock_1_pw_contract_weight", "shape": [32,64,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "uniform-int8", "call_arguments": [0.017191138118505478,0.021955177187919617,0.01790967583656311]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p6", "call_index": 5, "operator": "FusedConv2D_k2s2b_QuantizedOutput",
+      "inputs": [{"name": "primary", "source": "p5", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p6", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [{"key": "enc3_ds_weight", "shape": [64,32,2,2], "layout": "OIHW", "dtype": "int8"}],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.019169600680470467,0.028077777475118637]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p7", "call_index": 6, "operator": "FasterNetBlock<64, 2>",
+      "inputs": [{"name": "primary", "source": "p6", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"}],
+      "output": {"name": "p7", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [
+        {"key": "bottleneck_ResidualBlock_0_spatial_weight", "shape": [32,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_0_pw_expand_weight", "shape": [128,64,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_0_pw_contract_weight", "shape": [64,128,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.019169600680470467,0.028077777475118637,0.02192646823823452,0.021226389333605766,0.03648017346858978]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p8", "call_index": 7, "operator": "FasterNetBlock<64, 2>",
+      "inputs": [{"name": "primary", "source": "p7", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"}],
+      "output": {"name": "p8", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [
+        {"key": "bottleneck_ResidualBlock_1_spatial_weight", "shape": [32,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_1_pw_expand_weight", "shape": [128,64,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_1_pw_contract_weight", "shape": [64,128,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.021226389333605766,0.03648017346858978,0.029691703617572784,0.020896881818771362,0.03844049945473671]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p9", "call_index": 8, "operator": "FNB_CT2D_ADD<64, 2>",
+      "inputs": [
+        {"name": "primary", "source": "p8", "shape": [2,2,64], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+        {"name": "skip", "source": "p5", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}
+      ],
+      "output": {"name": "p9", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [
+        {"key": "bottleneck_ResidualBlock_2_spatial_weight", "shape": [32,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_2_pw_expand_weight", "shape": [128,64,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ResidualBlock_2_pw_contract_weight", "shape": [64,128,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "bottleneck_ct_weight", "shape": [64,32,2,2], "layout": "IOHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.020896881818771362,0.03844049945473671,0.022666048258543015,0.02807541936635971,0.021412165835499763,0.03075222671031952]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p10", "call_index": 9, "operator": "FasterNetBlock<32, 1>",
+      "inputs": [{"name": "primary", "source": "p9", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"}],
+      "output": {"name": "p10", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+      "weights": [
+        {"key": "decoder3_ResidualBlock_1_spatial_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder3_ResidualBlock_1_pw_expand_weight", "shape": [64,32,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder3_ResidualBlock_1_pw_contract_weight", "shape": [32,64,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "split-half-int8", "call_arguments": [0.021412165835499763,0.03075222671031952,0.022227706387639046,0.0215474721044302,0.02673504687845707]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p11", "call_index": 10, "operator": "FNB_CT2D_ADD<32, 1>",
+      "inputs": [
+        {"name": "primary", "source": "p10", "shape": [4,4,32], "layout": "HWC", "dtype": "int8", "quantization": "split-half-int8"},
+        {"name": "skip", "source": "p2", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}
+      ],
+      "output": {"name": "p11", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"},
+      "weights": [
+        {"key": "decoder3_ResidualBlock_2_spatial_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder3_ResidualBlock_2_pw_expand_weight", "shape": [64,32,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder3_ResidualBlock_2_pw_contract_weight", "shape": [32,64,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "dec3_ct_weight", "shape": [32,16,2,2], "layout": "IOHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "split-half-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "uniform-int8", "call_arguments": [0.0215474721044302,0.02673504687845707,0.020062033087015152,0.02540108747780323]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p12", "call_index": 11, "operator": "ConvNextBlock",
+      "inputs": [{"name": "primary", "source": "p11", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p12", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"},
+      "weights": [
+        {"key": "decoder2_RB1_conv_dw_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder2_RB1_pw_expand_weight", "shape": [32,16,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder2_RB1_pw_contract_weight", "shape": [16,32,1,1], "layout": "OIHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "uniform-int8", "call_arguments": [35.15770233112976,0.028443269431591034,25.313606416359107,0.03950444608926773]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    },
+    {
+      "pass_id": "p13", "call_index": 12, "operator": "FusedConv2D_DW_Conv2D_PW_Relu_Conv2D_Add_ConvTranspose2D",
+      "inputs": [{"name": "primary", "source": "p12", "shape": [8,8,16], "layout": "HWC", "dtype": "int8", "quantization": "uniform-int8"}],
+      "output": {"name": "p13", "shape": [16,16,8], "layout": "HWC", "dtype": "float16", "quantization": "none-fp16"},
+      "weights": [
+        {"key": "decoder2_ResidualBlock_2_conv_dw_weight", "shape": [16,16,3,3], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder2_ResidualBlock_2_pw_expand_weight", "shape": [32,16,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "decoder2_ResidualBlock_2_pw_contract_weight", "shape": [16,32,1,1], "layout": "OIHW", "dtype": "int8"},
+        {"key": "dec2_ct_weight", "shape": [16,8,2,2], "layout": "IOHW", "dtype": "int8"}
+      ],
+      "quantization": {"input": "uniform-int8", "weight": "per-tensor-int8-scale-from-p7", "accumulator": "int32-dot-product", "output": "none-fp16", "call_arguments": [16.584852442729886,0.06029598414897919,22.7801944733756,0.043897781521081924,0.06884194910526276]},
+      "fixed_input_case": "f01-synthetic-8x8-int8-v1",
+      "independent_expected": {"status": "unknown", "source": null, "sha256": null, "reason": "No independent pass-level golden or separately implemented CPU reference is accepted yet."}
+    }
+  ],
+  "limitations": {
+    "pass1_13_implemented": false,
+    "independent_expected_available": false,
+    "official_golden_available": false,
+    "device_qnn_htp_game": "not_run"
+  }
+}
