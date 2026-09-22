@@ -727,6 +727,145 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNone(context.complete(self.scenario["request"]))
         self.assertEqual(0, context.retained_resource_count)
 
+    def test_close_preserves_all_five_retained_states_until_matching_reclaim(self):
+        states = (
+            ("executing", False, False, False),
+            ("executing_timed_out", False, True, False),
+            ("execution_failed", False, False, True),
+            ("pending_consumption", True, False, False),
+            ("pending_consumption_timed_out", True, True, False),
+        )
+        for state, completed, timed_out, failed in states:
+            with self.subTest(state=state):
+                context = self.new_context()
+                request = copy.deepcopy(self.scenario["request"])
+                self.submit(context, request)
+                capacity = context.retained_resource_capacity_cells
+                if completed:
+                    context.complete(request)
+                if timed_out:
+                    context.timeout(request)
+                if failed:
+                    context.execution_failed(request)
+                self.assertEqual(state, context.state)
+
+                context.close(self.scenario["context"])
+                self.assertEqual("closing", context.state)
+                self.assertEqual(1, context.isolated_resource_count)
+                self.assertEqual(capacity, context.retained_resource_capacity_cells)
+                self.assertIsNone(context.committed_history)
+
+                if completed:
+                    self.assert_invalid(
+                        lambda: context.complete(request), "awaits result consumption"
+                    )
+                    context.result_consumed(request, True)
+                else:
+                    self.assert_invalid(
+                        lambda: context.result_consumed(request, True),
+                        "has not completed",
+                    )
+                    self.assertIsNone(context.complete(request))
+                self.assertEqual("closed", context.state)
+                self.assertEqual(0, context.retained_resource_count)
+                self.assertEqual(0, context.retained_resource_capacity_cells)
+                self.assertIsNone(context.committed_history)
+
+    def test_four_failed_generations_hold_budget_and_late_events_do_not_pollute_new_history(self):
+        context = self.new_context()
+        failed_requests = []
+        one_request_capacity = None
+        for generation in range(lifecycle.MAX_RETAINED_RESOURCE_COUNT):
+            request = copy.deepcopy(self.scenario["request"])
+            request["frame_id"] = str(generation + 1)
+            request["history_generation"] = str(generation)
+            self.submit(context, request)
+            if one_request_capacity is None:
+                one_request_capacity = context.retained_resource_capacity_cells
+            context.execution_failed(request)
+            context.reset(f"failed-generation-{generation}", str(generation))
+            failed_requests.append(request)
+
+        self.assertEqual(
+            lifecycle.MAX_RETAINED_RESOURCE_COUNT, context.isolated_resource_count
+        )
+        self.assertEqual(
+            one_request_capacity * lifecycle.MAX_RETAINED_RESOURCE_COUNT,
+            context.retained_resource_capacity_cells,
+        )
+        current = copy.deepcopy(self.scenario["request"])
+        current["frame_id"] = str(lifecycle.MAX_RETAINED_RESOURCE_COUNT + 1)
+        current["history_generation"] = str(lifecycle.MAX_RETAINED_RESOURCE_COUNT)
+        self.assert_invalid(lambda: self.submit(context, current), "resource count budget")
+
+        self.assertIsNone(context.complete(failed_requests[0]))
+        current_history = [[9, 8, 7], [6, 5, 4], [3, 2, 1]]
+        context.submit(current, current_history, self.scenario["motion_vectors"])
+        context.complete(current)
+        context.result_consumed(current, True)
+        committed = context.committed_history
+        self.assertEqual(current_history, committed)
+
+        for request in failed_requests[1:]:
+            context.execution_failed(request)
+            context.execution_failed(request)
+            self.assertEqual(committed, context.committed_history)
+            self.assertIsNone(context.complete(request))
+            self.assertEqual(committed, context.committed_history)
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertEqual("ready", context.state)
+
+    def test_close_and_completion_sixty_four_way_race_is_bounded_and_reclaimable(self):
+        context = self.new_context()
+        request = copy.deepcopy(self.scenario["request"])
+        self.submit(context, request)
+        barrier = threading.Barrier(64)
+        outcomes = []
+        errors = []
+
+        def race(kind):
+            try:
+                barrier.wait(timeout=5)
+                if kind == "close":
+                    context.close(self.scenario["context"])
+                    outcomes.append((kind, None))
+                else:
+                    outcomes.append((kind, context.complete(request)))
+            except Exception as exc:
+                errors.append((kind, exc))
+
+        threads = [
+            threading.Thread(target=race, args=("close" if index % 2 == 0 else "complete",))
+            for index in range(64)
+        ]
+        self.assertTrue(all(not thread.daemon for thread in threads))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), "non-daemon close/completion thread exceeded timeout")
+
+        close_errors = [exc for kind, exc in errors if kind == "close"]
+        completion_errors = [exc for kind, exc in errors if kind == "complete"]
+        completion_outcomes = [value for kind, value in outcomes if kind == "complete"]
+        self.assertEqual([], close_errors)
+        self.assertEqual(1, len(completion_outcomes))
+        self.assertEqual(31, len(completion_errors))
+        self.assertTrue(
+            all(
+                "already awaits result consumption" in str(exc)
+                or "active request has already completed" in str(exc)
+                or "there is no active request" in str(exc)
+                for exc in completion_errors
+            )
+        )
+        self.assertIn(context.retained_resource_count, (0, 1))
+        if context.retained_resource_count:
+            context.result_consumed(request, True)
+        self.assertEqual("closed", context.state)
+        self.assertEqual(0, context.retained_resource_count)
+        self.assertIsNone(context.committed_history)
+
     def test_reset_is_idempotent_advances_generation_and_keeps_frame_monotonic(self):
         context = self.new_context()
         self.submit(context)
