@@ -1,0 +1,15 @@
+{
+  "schema_version":"fsr-p3-onnx-segment-v1",
+  "segment":{"passes":["p3"],"operator":"FusedConv2D_k2s2b_QuantizedOutput"},
+  "manifest":{"path":"tools/fsr/pass_manifest.json","sha256":"419a53b803b5c5d9421714c258898cd3eff416b96d40b190df56eb396b57d1d2"},
+  "upstream_contract":{"path":"tools/fsr/cpu_passes_1_4_contract.json","sha256":"a2dd054d7309ed249bd73aa088315d650b2cecd192f81e29e95b91b230169f7b"},
+  "implementation":{"path":"tools/fsr/onnx_segment_p3.py","sha256":"e6de2f2a9a27771042f1a35b7b8ca20cf2e4a92517c2610d8af78d8c80b4ac7b"},
+  "sources":{"manifest_sha256":"419a53b803b5c5d9421714c258898cd3eff416b96d40b190df56eb396b57d1d2","f02a_contract_sha256":"a2dd054d7309ed249bd73aa088315d650b2cecd192f81e29e95b91b230169f7b","p7_receipt_sha256":"b791639c857af05a90ee6fefd492f310f472338265cdab4ae077203d4139d38b","weights_sha256":"9c644d42f421d6dfc2c13479dff84f1017c5457d00a14125796b3562944982fb","graph_sha256":"8179991469fc0aae5fbc114c7e10f18ffb31555ff25351898b786198e70b2266","simulator_sha256":"e82d407f26d4cd22d7b10d25a5f5d53e236febf98414946ecba32dee1377c0fe"},
+  "tensors":{"input":{"name":"p2_quantized_nchw","shape":[1,16,8,8],"dtype":"int8","layout":"NCHW","fixture_sha256":"57c18148d561081a77005fd63297a99b33f064d2f2f24b730803ebf2cb028a84"},"output":{"name":"p3_quantized_nchw","shape":[1,32,4,4],"dtype":"int8","layout":"NCHW","fixture_sha256":"a51a49f8a64c51bfa213076b6cbe3fb2339bc312bc29668e03a953210ed358be"}},
+  "qdq":{"input_scale":0.02335178479552269,"weight_scale":0.003455055644735694,"output_scales":[0.015390855260193348,0.018884973600506783],"output_scale_vector_sha256":"77cb9090a598cfedd93bcd59a8b64d3c3d43a1d4a9d20a6efde276d62baa5411","output_zero_vector_sha256":"66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925","zero_point":0,"axis":1},
+  "initializers":{"weight":{"name":"p3_weight_int8","shape":[32,16,2,2],"dtype":"int8","layout":"OIHW","sha256":"43f07431dcf401dc0b665e3ddc7658bd136fde53747fd2bc0ca4ea91b2da85f8"},"bias":{"name":"p3_bias_float","shape":[32],"dtype":"float32","layout":"C","sha256":"3a07b756c7b4ebd0593c69283b603c91f9df4ed572bd31febe1f88d530b737ec","provenance":"P7 float32 expansion of source float16 bias"}},
+  "graph":{"opset":18,"ir_version":10,"node_names":["p3_input_dequantize","p3_weight_dequantize","p3_conv2x2_stride2_bias","p3_output_quantize"],"node_types":["DequantizeLinear","DequantizeLinear","Conv","QuantizeLinear"],"dynamic_shapes":false,"reshape_supported":false},
+  "model":{"tracked":false,"rebuild":"local/venvs/reference/Scripts/python.exe -m tools.fsr.onnx_segment_p3 --p7 artifacts/p7-fsr-v07-r10a-20260922 --simulator research/fsr4-hexagon/model/sim/fsr4_sim.py --output <new-path.onnx>","byte_count":3251,"sha256":"2f15dce7ecabf990573f2a1794d984ee62950cdcbcba6a0764c77949390c0448"},
+  "comparison":{"runtime_numeric":"not_run","absolute_tolerance":null,"relative_tolerance":null},
+  "limitations":{"scope":"single-real-pass-p3-checker-only","onnx_runtime":"not_run","qairt_qnn_htp_device_game":"not_run","complete_fsr_onnx":false}
+}

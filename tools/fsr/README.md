@@ -205,3 +205,31 @@ The scalar comparison is only a composition of the three already accepted F02
 segment oracles.  It is not a fourth independent oracle.  F03 neither executes
 nor consumes a P8/accepted pass-0 output, and is not official full FSR4, ONNX,
 QNN/HTP, device, or game validation.
+
+### F04a real pass-3 ONNX segment
+
+`onnx_segment_p3.py` deterministically rebuilds the minimal continuous p3
+downscale segment from the authenticated P7 weight and bias. The static NCHW
+graph is `DQ(input), DQ(weight) -> Conv(k2,s2,bias) -> Q(axis=1)`; the Q scale
+vector repeats each of the two source half-channel scales 16 times. Its tensor
+names, int8 shapes, zero points, source
+hashes, initializer hashes, implementation hash, and serialized model hash are
+closed by `onnx_segment_p3_contract.json`. The generated 3,251-byte model is
+not tracked because it embeds external real-model weights.
+
+```powershell
+local\venvs\reference\Scripts\python.exe -m tools.fsr.onnx_segment_p3 `
+  --p7 artifacts\p7-fsr-v07-r10a-20260922 `
+  --simulator research\fsr4-hexagon\model\sim\fsr4_sim.py `
+  --output artifacts\f04a-p3-segment.onnx
+```
+
+F04a proves deterministic construction and `onnx.checker` acceptance only.
+ONNX Runtime numerical equivalence, complete FSR ONNX, QAIRT/QNN/HTP, device,
+and game validation remain unrun. ONNX `QuantizeLinear` specifies nearest-even
+rounding, while the pinned simulator-derived CPU reference uses half-away;
+F04a makes no claim about numeric equality at tie boundaries.
+Before decoding weights, the builder validates the fixed F01 manifest and F02a
+contract, then snapshots and hashes the P7 receipt, weights, graph, and
+simulator. It does not execute simulator code. Publication uses exclusive
+creation and preserves any output that appears concurrently.
