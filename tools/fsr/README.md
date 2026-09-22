@@ -172,3 +172,22 @@ four IOHW transpose phases plus the independent p5 skip.  Mathematical
 half-away rounding and the pinned simulator pre-tie limitation remain as
 documented for F02a.  These simulator-derived CPU checks do not implement
 pass10-13 and do not prove official golden, ONNX, QNN/HTP, device, or game use.
+
+## F02c pass10-13 CPU reference
+
+`cpu_passes_10_13.py` completes the segmented host reference with p10 FNB32,
+p11 FNB32/IOHW upsample plus the fixed p2 skip, p12 ConvNext, and p13
+ConvNext/IOHW upsample to finite float16.  The contract binds F01 and both
+earlier segmented contracts, authenticated P7 sources, fixed chain hashes, and
+pass-local direct fixtures.  Int8 comparisons require zero LSB; p13 compares
+the exact uint16 float16 bit pattern at zero ULP after converting each product
+to float16, converting bias to float16, and then adding in float16.
+
+These decoder weights are embedded NPZ arrays: unlike F02b's bin-backed
+weights, no separate `bin_raw__*` representation exists.  The scalar oracle
+uses the full raw NPZ keys and independent nested loops; p13 also byte-compares
+the duplicate `post.` arrays, but both layouts still share the P7 extractor.
+Operator behavior remains derived from the pinned simulator because the HLSLI
+operator source is absent.  This fixed-fixture CPU evidence is not an official
+golden or a claim of composed full FSR4, ONNX, QNN/HTP, device, game, quality,
+or performance validation.
